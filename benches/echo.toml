@@ -1,0 +1,23 @@
+# non-ratelimitied 1byte echo rpc-perf config
+#
+# use-case: measure the peak echo rate for a single connection with minimal payload
+
+[general]
+threads = 4
+connections = 1000
+duration = 10
+windows = 5
+protocol = "echo"
+tcp-nodelay = false
+ipv4 = true
+ipv6 = true
+
+[[workload]]
+name = "echo"
+method = "echo"
+rate = 0
+
+[[workload.parameter]]
+style = "random"
+size = 100
+seed = 0

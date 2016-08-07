@@ -1,0 +1,23 @@
+[package]
+name = "rux"
+version = "0.1.0"
+authors = ["Ernest Romero <ernest@unstable.build>"]
+description = "Experimental Linux I/O library"
+license-file = "LICENSE"
+documentation = "http://rux.unstable.build/rustdoc"
+homepage = "http://rux.unstable.build"
+repository = "https://github.com/ernestrc/rux"
+
+[lib]
+name = "rux"
+path = "src/lib.rs"
+
+[dependencies]
+error-chain = "*"
+nix = { version = "*", features = ["signalfd"] }
+log = "*"
+num_cpus = "*"
+lazy_static = "*"
+slab = "*"
+time = "*"
+pad = "*"
