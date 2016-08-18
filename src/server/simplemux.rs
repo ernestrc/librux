@@ -114,7 +114,7 @@ impl <P: EpollProtocol> Controller for SimpleMux<P> {
 
                 trace!("accept4: acceted new tcp client {}", &clifd);
 
-                // round robin
+                // round robin: TODO use iterator
                 let next = (self.accepted % self.io_threads as u64) as usize;
 
                 let epfd: EpollFd = *self.epfds.get(next).unwrap();

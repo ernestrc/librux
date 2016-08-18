@@ -13,11 +13,11 @@ name = "rux"
 path = "src/lib.rs"
 
 [dependencies]
-error-chain = "*"
-nix = { version = "*", features = ["signalfd"] }
-log = "*"
-num_cpus = "*"
-lazy_static = "*"
-slab = "*"
-time = "*"
-pad = "*"
+error-chain = "0.5.0"
+nix = { version = "0.6.0", features = ["signalfd"] }
+log = "0.3.6"
+num_cpus = "1.0.0"
+lazy_static = "0.2.1"
+slab = "0.2.0"
+time = "0.1.35"
+pad = "0.1.4"
