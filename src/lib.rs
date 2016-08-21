@@ -37,31 +37,6 @@ macro_rules! eintr {
 }
 
 #[macro_export]
-macro_rules! eagain {
-    ($syscall:expr, $name:expr, $($arg:expr),*) => {{
-        let res;
-        loop {
-            match $syscall($($arg),*) {
-                Ok(m) => {
-                    res = Ok(m);
-                    break;
-                },
-                Err(::nix::Error::Sys(a@::nix::errno::EINTR)) |
-                    Err(::nix::Error::Sys(a@::nix::errno::EAGAIN))=> {
-                        debug!("{}: {}: re-submitting syscall", $name, a);
-                        continue;
-                    },
-                    Err(err) => {
-                        res = Err(err);
-                        break;
-                    }
-            }
-        }
-        res
-    }}
-}
-
-#[macro_export]
 macro_rules! report_err {
     ($name:expr, $err:expr) => {{
         let e: Error = $err;
@@ -103,23 +78,22 @@ macro_rules! perror {
 mod constants;
 pub mod poll;
 pub mod buf;
-pub mod controller;
 pub mod handler;
 pub mod server;
 pub mod logging;
 pub mod error;
 
-use error::Result;
 use nix::unistd;
-pub use handler::Handler;
+
 pub use poll::{Epoll, EpollFd};
-pub use controller::Controller;
-pub use controller::sync::{SyncController, EpollProtocol, Action};
+pub use handler::Handler;
+pub use handler::sync::{SyncHandler, EpollProtocol, Action};
 pub use server::{Server, ServerImpl};
 pub use logging::{LoggingBackend, SimpleLogging};
+pub use error::Result;
 
 pub use std::os::unix::io::{AsRawFd, RawFd};
-
+pub use nix::unistd::close;
 
 pub fn write(fd: RawFd, buf: &[u8]) -> Result<Option<usize>> {
     let b = try!(eintr!(unistd::write, "unistd::write", fd, buf));

@@ -6,100 +6,76 @@ use nix::unistd;
 use slab::Slab;
 
 use error::{Result, Error};
-use controller::*;
 use handler::*;
 use poll::*;
 
 // TODO should take whether epoll mode is ET or LT
-pub struct SyncController<F: EpollProtocol> {
+pub struct SyncHandler<F: EpollProtocol> {
     epfd: EpollFd,
     handlers: Slab<RefCell<Box<Handler>>, usize>,
     eproto: F,
-    terminated: bool
 }
 
-impl<F: EpollProtocol> SyncController<F> {
-    pub fn new(epfd: EpollFd, eproto: F, max_handlers: usize) -> SyncController<F> {
+impl<F: EpollProtocol> SyncHandler<F> {
+    pub fn new(epfd: EpollFd, eproto: F, max_handlers: usize) -> SyncHandler<F> {
         trace!("new()");
-        SyncController {
+        SyncHandler {
             epfd: epfd,
             handlers: Slab::new(max_handlers),
             eproto: eproto,
-            terminated: false,
         }
     }
 
-    fn notify(&mut self, fd: RawFd, id: usize, events: EpollEventKind) -> Result<()> {
+    fn notify(&mut self, fd: RawFd, id: usize, event: &EpollEvent) {
         trace!("notify()");
+
+        let events = event.events;
 
         if events.contains(EPOLLRDHUP) || events.contains(EPOLLHUP) {
 
             trace!("socket's fd {}: EPOLLHUP", fd);
             match self.handlers.remove(id) {
-                Some(handler) => perror!("on_close()", handler.borrow_mut().on_close()),
                 None => error!("on_close(): handler not found"),
+                Some(_) => {}
             }
-
             perror!("unregister()", self.epfd.unregister(fd));
             perror!("close()", unistd::close(fd));
             debug!("handlers: {:?}", self.handlers);
-
         } else {
-
             let handler = &mut self.handlers[id];
-
-            if events.contains(EPOLLERR) {
-                trace!("socket's fd {}: EPOLERR", fd);
-                perror!("on_error()", handler.borrow_mut().on_error());
-            }
-
-            if events.contains(EPOLLIN) {
-                trace!("socket's fd {}: EPOLLIN", fd);
-                perror!("on_readable()", handler.borrow_mut().on_readable());
-            }
-
-            if events.contains(EPOLLOUT) {
-                trace!("socket's fd {}: EPOLLOUT", fd);
-                perror!("on_writable()", handler.borrow_mut().on_writable());
-            }
+            handler.borrow_mut().ready(event);
         }
-        Ok(())
     }
 }
 
-impl<F: EpollProtocol> Controller for SyncController<F> {
-
-    fn is_terminated(&self) -> bool {
-        self.terminated
-    }
-
-    fn ready(&mut self, ev: &EpollEvent) -> Result<()> {
+impl<F: EpollProtocol> Handler for SyncHandler<F> {
+    fn ready(&mut self, ev: &EpollEvent) {
         trace!("ready()");
 
         match self.eproto.decode(ev.data) {
 
             Action::New(proto, fd) => {
-                let id = try!(self.handlers
+                // TODO handle too many handlers
+                if let Ok(id) = self.handlers
                     .insert(RefCell::new(self.eproto.new(proto, fd, self.epfd)))
-                    .map_err(|_| "reached maximum number of handlers"));
+                    .map_err(|_| "reached maximum number of handlers") {
 
-                let action: Action<F> = Action::Notify(id, fd);
+                    let action: Action<F> = Action::Notify(id, fd);
 
-                let interest = EpollEvent {
-                    events: EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP,
-                    data: self.eproto.encode(action),
-                };
+                    let interest = EpollEvent {
+                        events: EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP,
+                        data: self.eproto.encode(action),
+                    };
 
-                try!(self.epfd.reregister(fd, &interest));
-                try!(self.notify(fd, id, ev.events));
+                    match self.epfd.reregister(fd, &interest) {
+                        Ok(_) => self.notify(fd, id, ev),
+                        Err(e) => report_err!("reregister()", e),
+                    }
+                }
             }
 
-            Action::Notify(id, fd) => {
-                try!(self.notify(fd, id, ev.events));
-            }
-
+            Action::Notify(id, fd) => self.notify(fd, id, ev),
         }
-        Ok(())
     }
 }
 
@@ -143,7 +119,7 @@ mod tests {
     use error::Result;
     use poll::*;
     use handler::Handler;
-    use {RawFd};
+    use RawFd;
     use super::*;
 
     #[derive(Clone, Copy)]

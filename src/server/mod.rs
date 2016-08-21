@@ -5,7 +5,7 @@ use nix::sys::signalfd::*;
 use nix::sys::signal::{SIGINT, SIGTERM};
 
 use error::Result;
-use controller::*;
+use handler::*;
 use poll::*;
 use super::logging::LoggingBackend;
 
@@ -24,11 +24,11 @@ pub struct Server<L: LoggingBackend> {
     terminated: bool,
 }
 
-unsafe impl <L: LoggingBackend + Send> Send for Server<L> {}
+unsafe impl<L: LoggingBackend + Send> Send for Server<L> {}
 
-impl <L> Server<L>
-where L: LoggingBackend + Send {
-
+impl<L> Server<L>
+    where L: LoggingBackend + Send
+{
     /// Instantiates new Server with the given implementation
     /// and logging backend
     pub fn bind<I: ServerImpl + Send + 'static>(im: I, lb: L) -> Result<()> {
@@ -44,7 +44,7 @@ where L: LoggingBackend + Send {
 
         thread::spawn(move || {
             try!(mask.thread_block());
-            //run impl's I/O event loop(s)
+            // run impl's I/O event loop(s)
             im.bind(mask)
         });
 
@@ -57,13 +57,14 @@ where L: LoggingBackend + Send {
 
         let mut epoll = try!(Epoll::new_with(loop_ms, |epfd| {
 
-            //delegate logging registering to logging backend
+            // delegate logging registering to logging backend
             let log = lb.setup(&epfd).unwrap();
 
             ::log::set_logger(|max_log_level| {
-                max_log_level.set(lb.level().to_log_level_filter());
-                log
-            }).unwrap();
+                    max_log_level.set(lb.level().to_log_level_filter());
+                    log
+                })
+                .unwrap();
 
             Server {
                 epfd: epfd,
@@ -79,15 +80,15 @@ where L: LoggingBackend + Send {
             data: fd as u64,
         };
 
-        //register signalfd with epfd
+        // register signalfd with epfd
         try!(epoll.epfd.register(fd, &siginfo));
 
-        //run aux event loop
+        // run aux event loop
         epoll.run()
     }
 }
 
-impl <L: LoggingBackend> Drop for Server<L> {
+impl<L: LoggingBackend> Drop for Server<L> {
     fn drop(&mut self) {
         // signalfd is closed by the SignalFd struct
         // and epfd is closed by EpollFd
@@ -95,12 +96,9 @@ impl <L: LoggingBackend> Drop for Server<L> {
     }
 }
 
-impl <L: LoggingBackend> Controller for Server<L> {
-    fn is_terminated(&self) -> bool {
-        self.terminated
-    }
+impl<L: LoggingBackend> Handler for Server<L> {
 
-    fn ready(&mut self, ev: &EpollEvent) -> Result<()> {
+    fn ready(&mut self, ev: &EpollEvent) {
         trace!("ready(): {:?}: {:?}", ev.data, ev.events);
         if ev.data == self._sigfd {
             match self.sigfd.read_signal() {
@@ -108,13 +106,12 @@ impl <L: LoggingBackend> Controller for Server<L> {
                     // stop server's event loop, as the signal mask
                     // contains SIGINT and SIGTERM
                     warn!("received signal {:?}. Shutting down..", sig.ssi_signo);
-                    //terminate server aux loop
+                    // terminate server aux loop
                     self.terminated = true;
                 }
                 Ok(None) => debug!("read_signal(): not ready to read"),
                 Err(err) => error!("read_signal(): {}", err),
             }
-            Ok(())
         } else {
             // delegate events to logging backend
             self.lb.ready(ev)
@@ -124,7 +121,6 @@ impl <L: LoggingBackend> Controller for Server<L> {
 
 
 pub trait ServerImpl {
-
     fn get_loop_ms(&self) -> isize;
 
     fn bind(self, mask: SigSet) -> Result<()>;

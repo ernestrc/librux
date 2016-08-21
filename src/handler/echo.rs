@@ -3,7 +3,8 @@ use std::os::unix::io::RawFd;
 use {read, write};
 use handler::Handler;
 use buf::ByteBuffer;
-use error::Result;
+use error::{Result, Error};
+use poll::*;
 
 const BUF_CAP: usize = 1024 * 1024;
 
@@ -25,16 +26,9 @@ impl EchoHandler {
             buf: ByteBuffer::with_capacity(BUF_CAP),
         }
     }
-}
 
-impl Handler for EchoHandler {
     fn on_error(&mut self) -> Result<()> {
         error!("on_error()");
-        Ok(())
-    }
-
-    fn on_close(&mut self) -> Result<()> {
-        trace!("on_close()");
         Ok(())
     }
 
@@ -70,5 +64,32 @@ impl Handler for EchoHandler {
             self.sockw = true;
         }
         Ok(())
+    }
+}
+
+impl Handler for EchoHandler {
+    fn ready(&mut self, event: &EpollEvent) {
+
+        let kind = event.events;
+
+        if kind.contains(EPOLLRDHUP) || kind.contains(EPOLLHUP) {
+            trace!("socket's fd {}: EPOLLHUP", self.clifd);
+            return;
+        }
+
+        if kind.contains(EPOLLERR) {
+            trace!("socket's fd {}: EPOLERR", self.clifd);
+            perror!("on_error()", self.on_error());
+        }
+
+        if kind.contains(EPOLLIN) {
+            trace!("socket's fd {}: EPOLLIN", self.clifd);
+            perror!("on_readable()", self.on_readable());
+        }
+
+        if kind.contains(EPOLLOUT) {
+            trace!("socket's fd {}: EPOLLOUT", self.clifd);
+            perror!("on_writable()", self.on_writable());
+        }
     }
 }

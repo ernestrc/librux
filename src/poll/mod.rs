@@ -5,10 +5,10 @@ use nix::sys::epoll::{epoll_ctl, epoll_wait, EpollOp};
 use nix::unistd;
 
 use error::{Result, Error};
-use controller::Controller;
+use handler::Handler;
 
-pub use nix::sys::epoll::{epoll_create, EpollEvent, EpollEventKind, EPOLLIN, EPOLLOUT, EPOLLERR, EPOLLHUP,
-                          EPOLLET, EPOLLONESHOT, EPOLLRDHUP};
+pub use nix::sys::epoll::{epoll_create, EpollEvent, EpollEventKind, EPOLLIN, EPOLLOUT, EPOLLERR,
+                          EPOLLHUP, EPOLLET, EPOLLONESHOT, EPOLLRDHUP};
 
 static EVENTS_N: &'static usize = &1000;
 
@@ -21,20 +21,22 @@ lazy_static! {
     };
 }
 
-pub struct Epoll<C: Controller> {
+pub struct Epoll<C: Handler> {
     pub epfd: EpollFd,
     loop_ms: isize,
-    controller: C,
+    handler: C,
     buf: Vec<EpollEvent>,
+    active: bool
 }
 
-impl<C: Controller> Epoll<C> {
-    pub fn from_fd(epfd: EpollFd, controller: C, loop_ms: isize) -> Epoll<C> {
+impl<C: Handler> Epoll<C> {
+    pub fn from_fd(epfd: EpollFd, handler: C, loop_ms: isize) -> Epoll<C> {
         Epoll {
             epfd: epfd,
             loop_ms: loop_ms,
-            controller: controller,
+            handler: handler,
             buf: Vec::with_capacity(*EVENTS_N),
+            active: true,
         }
     }
 
@@ -46,9 +48,9 @@ impl<C: Controller> Epoll<C> {
 
         let epfd = EpollFd { fd: fd };
 
-        let controller = newctl(epfd);
+        let handler = newctl(epfd);
 
-        Ok(Self::from_fd(epfd, controller, loop_ms))
+        Ok(Self::from_fd(epfd, handler, loop_ms))
     }
 
     fn wait(&self, dst: &mut [EpollEvent]) -> Result<usize> {
@@ -65,7 +67,7 @@ impl<C: Controller> Epoll<C> {
         unsafe { self.buf.set_len(cnt) }
 
         for ev in self.buf.iter() {
-            perror!("controller.ready()", self.controller.ready(&ev));
+            self.handler.ready(&ev);
         }
         Ok(())
     }
@@ -73,7 +75,7 @@ impl<C: Controller> Epoll<C> {
     pub fn run(&mut self) -> Result<()> {
         trace!("run()");
 
-        while !self.controller.is_terminated() {
+        while self.active {
             perror!("loop()", self.run_once());
         }
 
@@ -81,7 +83,7 @@ impl<C: Controller> Epoll<C> {
     }
 }
 
-impl<C: Controller> Drop for Epoll<C> {
+impl<C: Handler> Drop for Epoll<C> {
     fn drop(&mut self) {
         let _ = unistd::close(self.epfd.fd);
     }
@@ -137,22 +139,18 @@ impl From<EpollFd> for i32 {
 
 #[cfg(test)]
 mod tests {
-    use controller::Controller;
+    use handler::Handler;
     use error::Result;
     use ::std::sync::mpsc::*;
     use nix::fcntl::{O_NONBLOCK, O_CLOEXEC};
     use nix::unistd;
     use super::*;
 
-    struct ChannelController {
+    struct ChannelHandler {
         tx: Sender<EpollEvent>,
-        terminated: bool,
     }
 
-    impl Controller for ChannelController {
-        fn is_terminated(&self) -> bool {
-            self.terminated
-        }
+    impl Handler for ChannelHandler {
 
         fn ready(&mut self, events: &EpollEvent) -> Result<()> {
             self.tx.send(*events).unwrap();
@@ -161,16 +159,15 @@ mod tests {
     }
 
     #[test]
-    fn notify_controller() {
+    fn notify_handler() {
 
         let (tx, rx) = channel();
 
         let loop_ms = 10;
 
         let mut poll = Epoll::new_with(loop_ms, |_| {
-                ChannelController {
+                ChannelHandler {
                     tx: tx,
-                    terminated: false,
                 }
             })
             .unwrap();

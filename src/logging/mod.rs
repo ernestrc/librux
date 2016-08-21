@@ -2,46 +2,42 @@ use pad::{PadStr, Alignment};
 use log::{LogLevel, LogMetadata, LogRecord, Log};
 
 use error::Result;
-use controller::Controller;
+use handler::Handler;
 use poll::*;
 
 /// TODO: provide debug/warn/info/... macro implementations with thread_local!
-/// Logging Controller
+/// Logging Handler
 pub trait LoggingBackend
-    where Self: Controller + 'static
+    where Self: Handler + 'static
 {
-
     fn level(&self) -> LogLevel;
 
     fn setup(&self, epfd: &EpollFd) -> Result<Box<Log>>;
 }
 
 pub struct SimpleLogging {
-    level: LogLevel,
-    // TODO with proper buffering bufcap: usize,
-    //buf: Vec<u8>,
-    //pos: usize,
-    //limit: usize,
-    //fd: RawFd,
+    level: LogLevel, /* TODO with proper buffering bufcap: usize,
+                      * buf: Vec<u8>,
+                      * pos: usize,
+                      * limit: usize,
+                      * fd: RawFd, */
 }
 
 impl SimpleLogging {
     pub fn new(level: LogLevel) -> SimpleLogging {
-        SimpleLogging {
-            level: level
-        }
+        SimpleLogging { level: level }
     }
-    //pub fn stdout(level: LogLevel) -> SimpleLogging {
+    // pub fn stdout(level: LogLevel) -> SimpleLogging {
     //    let cap = 8 * MEGABYTE;
     //    Self::new(level, cap, 1)
-    //}
+    // }
 
-    //pub fn stderr(level: LogLevel) -> SimpleLogging {
+    // pub fn stderr(level: LogLevel) -> SimpleLogging {
     //    let cap = 8 * MEGABYTE;
     //    Self::new(level, cap, 2)
-    //}
+    // }
 
-    //pub fn new(level: LogLevel, bufcap: usize, fd: RawFd) -> SimpleLogging {
+    // pub fn new(level: LogLevel, bufcap: usize, fd: RawFd) -> SimpleLogging {
     //    // let logger = SimpleLogging {
     //    //    level: level,
     //    //    // bufcap: bufcap,
@@ -56,7 +52,7 @@ impl SimpleLogging {
     //    //    Box::new(logger)
     //    // });
     //    unimplemented!()
-    //}
+    // }
 }
 
 // struct SimpleLoggingSender<'a> {
@@ -89,7 +85,7 @@ impl SimpleLogging {
 //    }
 // }
 struct TracingLogger {
-    level: LogLevel
+    level: LogLevel,
 }
 
 impl Log for TracingLogger {
@@ -120,28 +116,22 @@ impl LoggingBackend for SimpleLogging {
         self.level
     }
     fn setup(&self, _: &EpollFd) -> Result<Box<Log>> {
-        //let interest = EpollEvent {
+        // let interest = EpollEvent {
         //    events: EPOLLOUT | EPOLLET,
         //    data: self.fd as u64,
-        //};
-        //try!(epfd.register(self.fd, &interest));
-        //let (tx, rx) = channel();
-        Ok(Box::new(TracingLogger {
-            level: self.level,
-        }))
+        // };
+        // try!(epfd.register(self.fd, &interest));
+        // let (tx, rx) = channel();
+        Ok(Box::new(TracingLogger { level: self.level }))
     }
 }
 
-impl Controller for SimpleLogging {
-    fn is_terminated(&self) -> bool {
-        //never terminates
-        false
-    }
+impl Handler for SimpleLogging {
 
-    fn ready(&mut self, _: &EpollEvent) -> Result<()> {
-        //let dst = &mut self.buf[self.pos..self.limit];
+    fn ready(&mut self, _: &EpollEvent) {
+        // let dst = &mut self.buf[self.pos..self.limit];
 
-        //if !dst.is_empty() {
+        // if !dst.is_empty() {
         //    if let Some(cnt) = try!(io::write(self.fd, &dst)) {
         //        self.pos += cnt;
         //        // naive buffering
@@ -150,7 +140,6 @@ impl Controller for SimpleLogging {
         //            self.limit = 0;
         //        }
         //    }
-        //}
-        Ok(())
+        // }
     }
 }
