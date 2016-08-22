@@ -76,6 +76,7 @@ macro_rules! perror {
 }
 
 mod constants;
+mod protocol;
 pub mod poll;
 pub mod buf;
 pub mod handler;
@@ -87,10 +88,11 @@ use nix::unistd;
 
 pub use poll::{Epoll, EpollFd};
 pub use handler::Handler;
-pub use handler::sync::{SyncHandler, EpollProtocol, Action};
+pub use handler::sync::SyncHandler;
 pub use server::{Server, ServerImpl};
 pub use logging::{LoggingBackend, SimpleLogging};
 pub use error::Result;
+pub use protocol::{IOProtocol, Action};
 
 pub use std::os::unix::io::{AsRawFd, RawFd};
 pub use nix::unistd::close;

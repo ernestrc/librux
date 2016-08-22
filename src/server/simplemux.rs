@@ -7,19 +7,22 @@ use nix::sys::signalfd::*;
 use nix::unistd;
 
 use error::{Error, Result};
-use handler::sync::*;
 use handler::*;
 use poll::*;
 use server::ServerImpl;
+use protocol::{IOProtocol, Action};
 
 /// Simple server implementation that creates one AF_INET/SOCK_STREAM socket and uses it to bind/listen
 /// at the specified address. It instantiates one epoll to accept new connections
 /// and one instance per cpu left to perform I/O.
 ///
-/// Events are handled synchronously TODO explain
+/// TODO rename to something more interesting
+///
+/// Events are handled synchronously TODO explain why useful for RPC or protocols
+/// that support request/message pipelining
 ///
 /// New connections are load balanced from the connections epoll to the rest in a round-robin fashion.
-pub struct SimpleMux<H: Handler + EpollProtocol> {
+pub struct SimpleMux<P: IOProtocol + Handler> {
     srvfd: RawFd,
     cepfd: EpollFd,
     sockaddr: SockAddr,
@@ -28,7 +31,11 @@ pub struct SimpleMux<H: Handler + EpollProtocol> {
     loop_ms: isize,
     accepted: u64,
     epfds: Vec<EpollFd>,
-    factory: Fn(EpollFd) -> H,
+    // FIXME separate into two
+    // FIXME
+    // FIXME
+    // FIXME
+    controller: P,
 }
 
 pub struct SimpleMuxConfig {
@@ -69,12 +76,10 @@ impl SimpleMuxConfig {
     }
 }
 
-impl<H> SimpleMux<H>
-    where H: Handler + EpollProtocol
+impl<P> SimpleMux<P>
+    where P: IOProtocol + Handler
 {
-    pub fn new<F>(config: SimpleMuxConfig, factory: Box<F>) -> Result<SimpleMux<H>>
-        where F: Fn(EpollFd) -> H
-    {
+    pub fn new(config: SimpleMuxConfig, controller: P) -> Result<SimpleMux<P>> {
 
         let SimpleMuxConfig { io_threads, max_conn, sockaddr, loop_ms } = config;
 
@@ -90,7 +95,7 @@ impl<H> SimpleMux<H>
                                 0)) as i32;
 
         Ok(SimpleMux {
-            factory: factory,
+            controller: controller,
             sockaddr: sockaddr,
             cepfd: cepfd,
             srvfd: srvfd,
@@ -103,8 +108,8 @@ impl<H> SimpleMux<H>
     }
 }
 
-impl<H> Handler for SimpleMux<H>
-    where H: Handler + EpollProtocol
+impl<P> Handler for SimpleMux<P>
+    where P: IOProtocol + Handler
 {
     fn ready(&mut self, _: &EpollEvent) {
         trace!("new()");
@@ -113,7 +118,7 @@ impl<H> Handler for SimpleMux<H>
         match eintr!(accept4, "accept4", self.srvfd, SOCK_NONBLOCK | SOCK_CLOEXEC) {
             Ok(Some(clifd)) => {
 
-                trace!("accept4: acceted new tcp client {}", &clifd);
+                trace!("accept4: accepted new tcp client {}", &clifd);
 
                 // round robin: TODO use iterator
                 let next = (self.accepted % self.io_threads as u64) as usize;
@@ -122,8 +127,8 @@ impl<H> Handler for SimpleMux<H>
 
                 let info = EpollEvent {
                     events: EPOLLONESHOT | EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP,
-                    // start with EpollProtocol handler 0
-                    data: self.handler.encode(Action::New(0.into(), clifd)),
+                    // start with IOProtocol handler 0
+                    data: self.controller.encode(Action::New(0.into(), clifd)),
                 };
 
                 debug!("assigned accepted client {} to epoll instance {}",
@@ -142,8 +147,8 @@ impl<H> Handler for SimpleMux<H>
     }
 }
 
-impl<H> ServerImpl for SimpleMux<H>
-    where H: Handler + EpollProtocol
+impl<P> ServerImpl for SimpleMux<P>
+    where P: IOProtocol + Handler + 'static
 {
     fn get_loop_ms(&self) -> isize {
         self.loop_ms
@@ -167,10 +172,10 @@ impl<H> ServerImpl for SimpleMux<H>
 
         try!(self.cepfd.register(self.srvfd, &ceinfo));
 
-        let max_conn = self.max_conn;
         let io_threads = self.io_threads;
         let loop_ms = self.loop_ms;
         let cepfd = self.cepfd;
+        let controller = self.controller;
 
         for _ in 0..io_threads {
 
@@ -180,15 +185,9 @@ impl<H> ServerImpl for SimpleMux<H>
 
             thread::spawn(move || {
                 // add the set of signals to the signal mask for all threads
-                // otherwise signalfd will not work properlys
                 mask.thread_block().unwrap();
-                // max number of handlers (connections)
-                // per handler
-                let maxh = max_conn / io_threads;
-                // TODO pass handler dynamically
-                let handler = self.factory(epfd);
-
-                let mut epoll = Epoll::from_fd(epfd, handler, -1);
+                // max number of handlers (connections) per handler
+                let mut epoll = Epoll::from_fd(epfd, controller.clone(), -1);
 
                 perror!("epoll.run()", epoll.run());
             });
@@ -206,8 +205,8 @@ impl<H> ServerImpl for SimpleMux<H>
 }
 
 
-impl<H> Drop for SimpleMux<H>
-    where H: Handler + EpollProtocol
+impl<P> Drop for SimpleMux<P>
+    where P: IOProtocol + Handler
 {
     fn drop(&mut self) {
         let _ = unistd::close(self.srvfd).unwrap();

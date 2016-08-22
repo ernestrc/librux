@@ -12,6 +12,8 @@ use super::logging::LoggingBackend;
 pub mod simplemux;
 
 /// Server facade.
+/// TODO rename to something more generic, as it could perfectly be used
+/// to implement clients
 ///
 /// Takes care of signals and logging, and delegates bind/listen/accept
 /// logic to `ServerImpl`.

@@ -12,7 +12,7 @@ impl EpollProtocol for EchoProtocol {
 
     type Protocol = usize;
 
-    fn new(&self, _: usize, fd: RawFd, epfd: EpollFd) -> Box<Handler> {
+    fn new(&self, _: Protocol, fd: RawFd, epfd: EpollFd) -> Box<Handler> {
         Box::new(EchoHandler::new(fd))
     }
 }

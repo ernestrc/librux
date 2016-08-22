@@ -21,16 +21,16 @@ lazy_static! {
     };
 }
 
-pub struct Epoll<C: Handler> {
+pub struct Epoll<H: Handler> {
     pub epfd: EpollFd,
     loop_ms: isize,
-    handler: C,
+    handler: H,
     buf: Vec<EpollEvent>,
     active: bool
 }
 
-impl<C: Handler> Epoll<C> {
-    pub fn from_fd(epfd: EpollFd, handler: C, loop_ms: isize) -> Epoll<C> {
+impl<H: Handler> Epoll<H> {
+    pub fn from_fd(epfd: EpollFd, handler: H, loop_ms: isize) -> Epoll<H> {
         Epoll {
             epfd: epfd,
             loop_ms: loop_ms,
@@ -40,8 +40,8 @@ impl<C: Handler> Epoll<C> {
         }
     }
 
-    pub fn new_with<F>(loop_ms: isize, newctl: F) -> Result<Epoll<C>>
-        where F: FnOnce(EpollFd) -> C
+    pub fn new_with<F>(loop_ms: isize, newctl: F) -> Result<Epoll<H>>
+        where F: FnOnce(EpollFd) -> H
     {
 
         let fd = try!(epoll_create());
@@ -83,7 +83,7 @@ impl<C: Handler> Epoll<C> {
     }
 }
 
-impl<C: Handler> Drop for Epoll<C> {
+impl<H: Handler> Drop for Epoll<H> {
     fn drop(&mut self) {
         let _ = unistd::close(self.epfd.fd);
     }
