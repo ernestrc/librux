@@ -17,12 +17,13 @@ use protocol::{IOProtocol, Action};
 /// and one instance per cpu left to perform I/O.
 ///
 /// TODO rename to something more interesting
+/// TODO think about how to support request pipelining
 ///
 /// Events are handled synchronously TODO explain why useful for RPC or protocols
 /// that support request/message pipelining
 ///
 /// New connections are load balanced from the connections epoll to the rest in a round-robin fashion.
-pub struct SimpleMux<P: IOProtocol + Handler> {
+pub struct SimpleMux<P: IOProtocol> {
     srvfd: RawFd,
     cepfd: EpollFd,
     sockaddr: SockAddr,
@@ -31,11 +32,8 @@ pub struct SimpleMux<P: IOProtocol + Handler> {
     loop_ms: isize,
     accepted: u64,
     epfds: Vec<EpollFd>,
-    // FIXME separate into two
-    // FIXME
-    // FIXME
-    // FIXME
-    controller: P,
+    protocol: P,
+    terminated: bool
 }
 
 pub struct SimpleMuxConfig {
@@ -77,9 +75,9 @@ impl SimpleMuxConfig {
 }
 
 impl<P> SimpleMux<P>
-    where P: IOProtocol + Handler
+    where P: IOProtocol
 {
-    pub fn new(config: SimpleMuxConfig, controller: P) -> Result<SimpleMux<P>> {
+    pub fn new(config: SimpleMuxConfig, protocol: P) -> Result<SimpleMux<P>> {
 
         let SimpleMuxConfig { io_threads, max_conn, sockaddr, loop_ms } = config;
 
@@ -95,7 +93,7 @@ impl<P> SimpleMux<P>
                                 0)) as i32;
 
         Ok(SimpleMux {
-            controller: controller,
+            protocol: protocol,
             sockaddr: sockaddr,
             cepfd: cepfd,
             srvfd: srvfd,
@@ -103,14 +101,18 @@ impl<P> SimpleMux<P>
             io_threads: io_threads,
             loop_ms: loop_ms,
             accepted: 0,
+            terminated: false,
             epfds: Vec::with_capacity(io_threads),
         })
     }
 }
 
 impl<P> Handler for SimpleMux<P>
-    where P: IOProtocol + Handler
+    where P: IOProtocol
 {
+    fn is_terminated(&self) -> bool {
+        self.terminated
+    }
     fn ready(&mut self, _: &EpollEvent) {
         trace!("new()");
 
@@ -128,7 +130,7 @@ impl<P> Handler for SimpleMux<P>
                 let info = EpollEvent {
                     events: EPOLLONESHOT | EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP,
                     // start with IOProtocol handler 0
-                    data: self.controller.encode(Action::New(0.into(), clifd)),
+                    data: self.protocol.encode(Action::New(0.into(), clifd)),
                 };
 
                 debug!("assigned accepted client {} to epoll instance {}",
@@ -148,10 +150,14 @@ impl<P> Handler for SimpleMux<P>
 }
 
 impl<P> ServerImpl for SimpleMux<P>
-    where P: IOProtocol + Handler + 'static
+    where P: IOProtocol + 'static
 {
     fn get_loop_ms(&self) -> isize {
         self.loop_ms
+    }
+
+    fn stop(&mut self) {
+        self.terminated = true;
     }
 
     fn bind(mut self, mask: SigSet) -> Result<()> {
@@ -175,7 +181,7 @@ impl<P> ServerImpl for SimpleMux<P>
         let io_threads = self.io_threads;
         let loop_ms = self.loop_ms;
         let cepfd = self.cepfd;
-        let controller = self.controller;
+        let protocol = self.protocol;
 
         for _ in 0..io_threads {
 
@@ -186,8 +192,7 @@ impl<P> ServerImpl for SimpleMux<P>
             thread::spawn(move || {
                 // add the set of signals to the signal mask for all threads
                 mask.thread_block().unwrap();
-                // max number of handlers (connections) per handler
-                let mut epoll = Epoll::from_fd(epfd, controller.clone(), -1);
+                let mut epoll = Epoll::from_fd(epfd, protocol.get_handler(From::from(0_usize), epfd.fd, epfd), -1);
 
                 perror!("epoll.run()", epoll.run());
             });
@@ -197,7 +202,7 @@ impl<P> ServerImpl for SimpleMux<P>
 
 
         // consume itself
-        let mut epoll = Epoll::from_fd(cepfd, self, loop_ms);
+        let mut epoll = Epoll::from_fd(cepfd, Box::new(self), loop_ms);
 
         // run accept event loop
         epoll.run()
@@ -206,7 +211,7 @@ impl<P> ServerImpl for SimpleMux<P>
 
 
 impl<P> Drop for SimpleMux<P>
-    where P: IOProtocol + Handler
+    where P: IOProtocol
 {
     fn drop(&mut self) {
         let _ = unistd::close(self.srvfd).unwrap();

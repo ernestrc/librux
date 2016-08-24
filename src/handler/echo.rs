@@ -68,6 +68,9 @@ impl EchoHandler {
 }
 
 impl Handler for EchoHandler {
+    fn is_terminated(&self) -> bool {
+        false
+    }
     fn ready(&mut self, event: &EpollEvent) {
 
         let kind = event.events;

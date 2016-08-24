@@ -50,6 +50,11 @@ impl<F: IOProtocol> SyncHandler<F> {
 }
 
 impl<F: IOProtocol> Handler for SyncHandler<F> {
+
+    fn is_terminated(&self) -> bool {
+        false
+    }
+
     fn ready(&mut self, ev: &EpollEvent) {
         trace!("ready()");
 
@@ -57,7 +62,7 @@ impl<F: IOProtocol> Handler for SyncHandler<F> {
 
             Action::New(proto, fd) => {
                 if let Ok(id) = self.handlers
-                    .insert(RefCell::new(self.eproto.on_new_fd(proto, fd, self.epfd))) {
+                    .insert(RefCell::new(self.eproto.get_handler(proto, fd, self.epfd))) {
                     // TODO handle too many handlers
                     // .map_err(|_| "reached maximum number of handlers") {
 

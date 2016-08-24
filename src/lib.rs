@@ -99,7 +99,6 @@ pub use nix::unistd::close;
 
 pub fn write(fd: RawFd, buf: &[u8]) -> Result<Option<usize>> {
     let b = try!(eintr!(unistd::write, "unistd::write", fd, buf));
-
     Ok(b)
 }
 

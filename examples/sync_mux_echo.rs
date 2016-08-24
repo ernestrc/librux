@@ -1,5 +1,6 @@
 extern crate log;
-#[macro_use] extern crate rux;
+#[macro_use]
+extern crate rux;
 
 use rux::*;
 use rux::handler::echo::EchoHandler;
@@ -8,12 +9,15 @@ use rux::server::simplemux::*;
 #[derive(Clone, Copy)]
 struct EchoProtocol;
 
-impl EpollProtocol for EchoProtocol {
-
+impl IOProtocol for EchoProtocol {
     type Protocol = usize;
 
-    fn new(&self, _: Protocol, fd: RawFd, epfd: EpollFd) -> Box<Handler> {
-        Box::new(EchoHandler::new(fd))
+    fn get_handler(&self, _: Self::Protocol, fd: RawFd, epfd: EpollFd) -> Box<Handler> {
+        if fd == epfd.fd {
+            Box::new(SyncHandler::new(epfd, EchoProtocol, 1000))
+        } else {
+            Box::new(EchoHandler::new(fd))
+        }
     }
 }
 
@@ -23,6 +27,6 @@ fn main() {
 
     let logging = SimpleLogging::new(::log::LogLevel::Info);
 
-    Server::bind(SimpleMux::new(EchoProtocol, config).unwrap(), logging).unwrap();
+    Server::bind(SimpleMux::new(config, EchoProtocol).unwrap(), logging).unwrap();
 
 }

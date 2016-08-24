@@ -1,5 +1,6 @@
 use std::thread;
 use std::os::unix::io::AsRawFd;
+use std::thread::JoinHandle;
 
 use nix::sys::signalfd::*;
 use nix::sys::signal::{SIGINT, SIGTERM};
@@ -23,6 +24,7 @@ pub struct Server<L: LoggingBackend> {
     // to speed up `ready()`
     _sigfd: u64,
     lb: L,
+    sproc: JoinHandle<Result<()>>,
     terminated: bool,
 }
 
@@ -44,7 +46,7 @@ impl<L> Server<L>
 
         let loop_ms = im.get_loop_ms();
 
-        thread::spawn(move || {
+        let sproc = thread::spawn(move || {
             try!(mask.thread_block());
             // run impl's I/O event loop(s)
             im.bind(mask)
@@ -68,13 +70,14 @@ impl<L> Server<L>
                 })
                 .unwrap();
 
-            Server {
+            Box::new(Server {
                 epfd: epfd,
                 sigfd: sigfd,
                 _sigfd: fd as u64,
                 lb: lb,
+                sproc: sproc,
                 terminated: false,
-            }
+            })
         }));
 
         let siginfo = EpollEvent {
@@ -100,6 +103,10 @@ impl<L: LoggingBackend> Drop for Server<L> {
 
 impl<L: LoggingBackend> Handler for Server<L> {
 
+    fn is_terminated(&self) -> bool {
+        self.terminated
+    }
+
     fn ready(&mut self, ev: &EpollEvent) {
         trace!("ready(): {:?}: {:?}", ev.data, ev.events);
         if ev.data == self._sigfd {
@@ -123,6 +130,9 @@ impl<L: LoggingBackend> Handler for Server<L> {
 
 
 pub trait ServerImpl {
+
+    fn stop(&mut self);
+
     fn get_loop_ms(&self) -> isize;
 
     fn bind(self, mask: SigSet) -> Result<()>;

@@ -8,11 +8,11 @@ use rux::server::simplemux::*;
 #[derive(Clone, Copy)]
 struct EchoProtocol;
 
-impl EpollProtocol for EchoProtocol {
+impl IOProtocol for EchoProtocol {
 
     type Protocol = usize;
 
-    fn new(&self, _: usize, fd: RawFd, epfd: EpollFd) -> Box<Handler> {
+    fn on_new_fd(&self, _: usize, fd: RawFd, epfd: EpollFd) -> Box<Handler> {
         Box::new(EchoHandler::new(fd))
     }
 }

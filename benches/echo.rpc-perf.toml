@@ -3,9 +3,9 @@
 # use-case: measure the peak echo rate for a single connection with minimal payload
 
 [general]
-threads = 4
+threads = 6
 connections = 1000
-duration = 10
+duration = 20
 windows = 5
 protocol = "echo"
 tcp-nodelay = false
@@ -18,6 +18,6 @@ method = "echo"
 rate = 0
 
 [[workload.parameter]]
-style = "random"
-size = 100
+style = "static"
+size = 1
 seed = 0
