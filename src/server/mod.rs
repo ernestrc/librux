@@ -1,6 +1,5 @@
 use std::thread;
 use std::os::unix::io::AsRawFd;
-use std::thread::JoinHandle;
 
 use nix::sys::signalfd::*;
 use nix::sys::signal::{SIGINT, SIGTERM};
@@ -24,7 +23,6 @@ pub struct Server<L: LoggingBackend> {
     // to speed up `ready()`
     _sigfd: u64,
     lb: L,
-    sproc: JoinHandle<Result<()>>,
     terminated: bool,
 }
 
@@ -46,7 +44,7 @@ impl<L> Server<L>
 
         let loop_ms = im.get_loop_ms();
 
-        let sproc = thread::spawn(move || {
+        thread::spawn(move || {
             try!(mask.thread_block());
             // run impl's I/O event loop(s)
             im.bind(mask)
@@ -75,7 +73,6 @@ impl<L> Server<L>
                 sigfd: sigfd,
                 _sigfd: fd as u64,
                 lb: lb,
-                sproc: sproc,
                 terminated: false,
             })
         }));

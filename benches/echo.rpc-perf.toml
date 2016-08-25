@@ -3,10 +3,10 @@
 # use-case: measure the peak echo rate for a single connection with minimal payload
 
 [general]
-threads = 6
+threads = 2
 connections = 1000
-duration = 20
-windows = 5
+duration = 5
+windows = 10
 protocol = "echo"
 tcp-nodelay = false
 ipv4 = true

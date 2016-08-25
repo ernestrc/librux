@@ -12,11 +12,11 @@ struct EchoProtocol;
 impl IOProtocol for EchoProtocol {
     type Protocol = usize;
 
-    fn get_handler(&self, _: Self::Protocol, fd: RawFd, epfd: EpollFd) -> Box<Handler> {
-        if fd == epfd.fd {
+    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd) -> Box<Handler> {
+        if p == 0 {
             Box::new(SyncHandler::new(epfd, EchoProtocol, 1000))
         } else {
-            Box::new(EchoHandler::new(fd))
+            Box::new(EchoHandler::new(EchoProtocol))
         }
     }
 }

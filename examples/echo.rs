@@ -12,8 +12,8 @@ impl IOProtocol for EchoProtocol {
 
     type Protocol = usize;
 
-    fn on_new_fd(&self, _: usize, fd: RawFd, epfd: EpollFd) -> Box<Handler> {
-        Box::new(EchoHandler::new(fd))
+    fn get_handler(&self, _: usize, _: EpollFd) -> Box<Handler> {
+        Box::new(EchoHandler::new(EchoProtocol))
     }
 }
 
@@ -23,6 +23,6 @@ fn main() {
 
     let logging = SimpleLogging::new(::log::LogLevel::Info);
 
-    Server::bind(SimpleMux::new(EchoProtocol, config).unwrap(), logging).unwrap();
+    Server::bind(SimpleMux::new(config, EchoProtocol).unwrap(), logging).unwrap();
 
 }

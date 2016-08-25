@@ -33,7 +33,7 @@ pub struct SimpleMux<P: IOProtocol> {
     accepted: u64,
     epfds: Vec<EpollFd>,
     protocol: P,
-    terminated: bool
+    terminated: bool,
 }
 
 pub struct SimpleMuxConfig {
@@ -192,7 +192,8 @@ impl<P> ServerImpl for SimpleMux<P>
             thread::spawn(move || {
                 // add the set of signals to the signal mask for all threads
                 mask.thread_block().unwrap();
-                let mut epoll = Epoll::from_fd(epfd, protocol.get_handler(From::from(0_usize), epfd.fd, epfd), -1);
+                let mut epoll =
+                    Epoll::from_fd(epfd, protocol.get_handler(From::from(0_usize), epfd), -1);
 
                 perror!("epoll.run()", epoll.run());
             });

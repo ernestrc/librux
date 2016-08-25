@@ -127,11 +127,9 @@ impl LoggingBackend for SimpleLogging {
 }
 
 impl Handler for SimpleLogging {
-
     fn is_terminated(&self) -> bool {
         false
     }
-
     fn ready(&mut self, _: &EpollEvent) {
         // let dst = &mut self.buf[self.pos..self.limit];
 

@@ -1,5 +1,3 @@
-use std::io;
-
 use poll::EpollEvent;
 
 pub mod echo;
