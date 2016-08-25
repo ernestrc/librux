@@ -8,7 +8,7 @@ use poll::*;
 /// TODO: provide debug/warn/info/... macro implementations with thread_local!
 /// Logging Handler
 pub trait LoggingBackend
-    where Self: Handler + 'static
+    where Self: Handler<EpollEvent> + 'static
 {
     fn level(&self) -> LogLevel;
 
@@ -126,7 +126,7 @@ impl LoggingBackend for SimpleLogging {
     }
 }
 
-impl Handler for SimpleLogging {
+impl Handler<EpollEvent> for SimpleLogging {
     fn is_terminated(&self) -> bool {
         false
     }

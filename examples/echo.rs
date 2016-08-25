@@ -12,14 +12,16 @@ impl IOProtocol for EchoProtocol {
 
     type Protocol = usize;
 
-    fn get_handler(&self, _: usize, _: EpollFd) -> Box<Handler> {
+    fn get_handler(&self, _: usize, _: EpollFd) -> Box<Handler<EpollEvent>> {
         Box::new(EchoHandler::new(EchoProtocol))
     }
 }
 
 fn main() {
 
-    let config = SimpleMuxConfig::new(("127.0.0.1", 10003)).unwrap();
+    let config = SimpleMuxConfig::new(("127.0.0.1", 10003))
+        .unwrap()
+        .io_threads(6);
 
     let logging = SimpleLogging::new(::log::LogLevel::Info);
 

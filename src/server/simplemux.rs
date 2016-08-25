@@ -107,7 +107,7 @@ impl<P> SimpleMux<P>
     }
 }
 
-impl<P> Handler for SimpleMux<P>
+impl<P> Handler<EpollEvent> for SimpleMux<P>
     where P: IOProtocol
 {
     fn is_terminated(&self) -> bool {
@@ -128,7 +128,7 @@ impl<P> Handler for SimpleMux<P>
                 let epfd: EpollFd = *self.epfds.get(next).unwrap();
 
                 let info = EpollEvent {
-                    events: EPOLLONESHOT | EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP,
+                    events: EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP,
                     // start with IOProtocol handler 0
                     data: self.protocol.encode(Action::New(0.into(), clifd)),
                 };

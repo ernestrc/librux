@@ -1,6 +1,6 @@
-# non-ratelimitied 1byte echo rpc-perf config
+# rate-limited 1byte echo rpc-perf config
 #
-# use-case: measure the peak echo rate for a single connection with minimal payload
+# use-case: analyze request/response latency
 
 [general]
 threads = 6
@@ -15,9 +15,9 @@ ipv6 = true
 [[workload]]
 name = "echo"
 method = "echo"
-rate = 0
+rate = 1000
 
 [[workload.parameter]]
 style = "static"
-size = 1
+size = 100
 seed = 0

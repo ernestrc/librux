@@ -86,7 +86,7 @@ pub mod error;
 
 use nix::unistd;
 
-pub use poll::{Epoll, EpollFd};
+pub use poll::{Epoll, EpollFd, EpollEvent};
 pub use handler::Handler;
 pub use handler::sync::SyncHandler;
 pub use server::{Server, ServerImpl};

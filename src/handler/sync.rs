@@ -13,17 +13,23 @@ use poll::*;
 // TODO should take whether epoll mode is ET or LT (as marker traits)
 pub struct SyncHandler<F: IOProtocol> {
     epfd: EpollFd,
-    handlers: Slab<RefCell<Box<Handler>>, usize>,
+    handlers: Slab<RefCell<Box<Handler<EpollEvent>>>, usize>,
     eproto: F,
+    rproto: F::Protocol,
 }
 
 impl<F: IOProtocol> SyncHandler<F> {
-    pub fn new(epfd: EpollFd, eproto: F, max_handlers: usize) -> SyncHandler<F> {
+    pub fn new(epfd: EpollFd,
+               eproto: F,
+               rproto: F::Protocol,
+               max_handlers: usize)
+               -> SyncHandler<F> {
         trace!("new()");
         SyncHandler {
             epfd: epfd,
             handlers: Slab::new(max_handlers),
             eproto: eproto,
+            rproto: rproto,
         }
     }
 
@@ -49,7 +55,7 @@ impl<F: IOProtocol> SyncHandler<F> {
     }
 }
 
-impl<F: IOProtocol> Handler for SyncHandler<F> {
+impl<F: IOProtocol> Handler<EpollEvent> for SyncHandler<F> {
 
     fn is_terminated(&self) -> bool {
         false
@@ -61,10 +67,13 @@ impl<F: IOProtocol> Handler for SyncHandler<F> {
         match self.eproto.decode(ev.data) {
 
             Action::New(proto, fd) => {
+                // TODO a little bit arbitrary; protocol should provide methods for next
+                // handler in the stack
+                let next = if proto.into() == 0_usize { self.rproto } else { proto };
+                trace!("ready(): new handler ({})", next.into());
+
                 if let Ok(id) = self.handlers
-                    .insert(RefCell::new(self.eproto.get_handler(proto, self.epfd))) {
-                    // TODO handle too many handlers
-                    // .map_err(|_| "reached maximum number of handlers") {
+                    .insert(RefCell::new(self.eproto.get_handler(next, self.epfd))) {
 
                     let action: Action<F> = Action::Notify(id, fd);
 
@@ -77,9 +86,15 @@ impl<F: IOProtocol> Handler for SyncHandler<F> {
                         Ok(_) => self.notify(fd, id, ev),
                         Err(e) => report_err!("reregister()", e),
                     }
+                } else {
+                    // TODO handle too many handlers
+                    // .map_err(|_| "reached maximum number of handlers") {
                 }
             }
 
+            // TODO handler should abstract over a type parameter
+            // so that this handler takes Handlers of Action
+            // and we don't have to decode the event twice
             Action::Notify(id, fd) => self.notify(fd, id, ev),
         }
     }

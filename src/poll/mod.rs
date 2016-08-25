@@ -24,12 +24,12 @@ lazy_static! {
 pub struct Epoll {
     pub epfd: EpollFd,
     loop_ms: isize,
-    handler: Box<Handler>,
+    handler: Box<Handler<EpollEvent>>,
     buf: Vec<EpollEvent>,
 }
 
 impl Epoll {
-    pub fn from_fd(epfd: EpollFd, handler: Box<Handler>, loop_ms: isize) -> Epoll {
+    pub fn from_fd(epfd: EpollFd, handler: Box<Handler<EpollEvent>>, loop_ms: isize) -> Epoll {
         Epoll {
             epfd: epfd,
             loop_ms: loop_ms,
@@ -39,7 +39,7 @@ impl Epoll {
     }
 
     pub fn new_with<F>(loop_ms: isize, newctl: F) -> Result<Epoll>
-        where F: FnOnce(EpollFd) -> Box<Handler>
+        where F: FnOnce(EpollFd) -> Box<Handler<EpollEvent>>
     {
 
         let fd = try!(epoll_create());

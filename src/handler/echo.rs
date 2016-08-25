@@ -68,7 +68,7 @@ impl <P: IOProtocol> EchoHandler<P> {
     }
 }
 
-impl <P: IOProtocol> Handler for EchoHandler<P> {
+impl <P: IOProtocol> Handler<EpollEvent> for EchoHandler<P> {
 
     fn is_terminated(&self) -> bool {
         false
@@ -85,6 +85,10 @@ impl <P: IOProtocol> Handler for EchoHandler<P> {
 
         if kind.contains(EPOLLRDHUP) || kind.contains(EPOLLHUP) {
             trace!("socket's fd {}: EPOLLHUP", fd);
+            //FIXME sync handler should take a different type of
+            //handler !EpollEvent or another trait (i.e. Controller)
+            //should be used as a handler responsible of the connection
+            ::nix::unistd::close(fd);
             return;
         }
 

@@ -1,7 +1,7 @@
 use std::os::unix::io::RawFd;
 use std::boxed::Box;
 
-use poll::EpollFd;
+use poll::{EpollFd, EpollEvent};
 use handler::Handler;
 
 pub type HandlerId = usize;
@@ -14,9 +14,9 @@ pub enum Action<P: IOProtocol> {
 pub trait IOProtocol
     where Self: Sized + Send + Copy
 {
-    type Protocol: From<usize> + Into<usize>;
+    type Protocol: From<usize> + Into<usize> + Copy;
 
-    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd) -> Box<Handler>;
+    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd) -> Box<Handler<EpollEvent>>;
 
     fn encode(&self, action: Action<Self>) -> u64 {
         match action {
@@ -59,7 +59,7 @@ mod tests {
         on_writable: bool,
     }
 
-    impl Handler for TestHandler {
+    impl Handler<EpollEvent> for TestHandler {
         fn on_error(&mut self) -> Result<()> {
             self.on_error = true;
             Ok(())

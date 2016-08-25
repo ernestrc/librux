@@ -98,7 +98,7 @@ impl<L: LoggingBackend> Drop for Server<L> {
     }
 }
 
-impl<L: LoggingBackend> Handler for Server<L> {
+impl<L: LoggingBackend> Handler<EpollEvent> for Server<L> {
 
     fn is_terminated(&self) -> bool {
         self.terminated
