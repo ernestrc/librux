@@ -17,11 +17,14 @@ impl IOProtocol for EchoProtocol {
     }
 }
 
+//TODO fix
+//thread 'thread '<unnamed><unnamed>' panicked at '' panicked at 'cannot access stdout during shutdowncannot access stdout during shutdown', ',
 fn main() {
 
     let config = SimpleMuxConfig::new(("127.0.0.1", 10003))
         .unwrap()
-        .io_threads(6);
+        .io_threads(1)
+        .loop_ms(-1);
 
     let logging = SimpleLogging::new(::log::LogLevel::Info);
 

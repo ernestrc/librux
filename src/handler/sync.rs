@@ -78,7 +78,7 @@ impl<F: IOProtocol> Handler<EpollEvent> for SyncHandler<F> {
                     let action: Action<F> = Action::Notify(id, fd);
 
                     let interest = EpollEvent {
-                        events: EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP,
+                        events: EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP | EPOLLET,
                         data: self.eproto.encode(action),
                     };
 

@@ -52,7 +52,6 @@ impl Epoll {
     }
 
     fn wait(&self, dst: &mut [EpollEvent]) -> Result<usize> {
-        trace!("wait()");
         let cnt = try!(epoll_wait(self.epfd.fd, dst, self.loop_ms));
         Ok(cnt)
     }
