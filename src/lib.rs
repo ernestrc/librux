@@ -76,7 +76,7 @@ macro_rules! perror {
 }
 
 mod constants;
-mod protocol;
+pub mod protocol;
 pub mod poll;
 pub mod buf;
 pub mod handler;
@@ -96,6 +96,8 @@ pub use protocol::{IOProtocol, Action};
 
 pub use std::os::unix::io::{AsRawFd, RawFd};
 pub use nix::unistd::close;
+pub use nix::fcntl;
+pub use nix::sys::stat;
 
 pub fn write(fd: RawFd, buf: &[u8]) -> Result<Option<usize>> {
     let b = try!(eintr!(unistd::write, "unistd::write", fd, buf));

@@ -1,0 +1,2 @@
+POST http://localhost:10003/prod/logging/ClientEvent
+@./payload.json
