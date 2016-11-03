@@ -96,6 +96,7 @@ pub use protocol::{IOProtocol, Action};
 
 pub use std::os::unix::io::{AsRawFd, RawFd};
 pub use nix::unistd::close;
+pub use nix::sys::socket::{shutdown, Shutdown};
 pub use nix::fcntl;
 pub use nix::sys::stat;
 pub use slab::*;

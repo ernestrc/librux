@@ -9,7 +9,7 @@ pub trait Handler<E> {
     fn ready(&mut self, e: &E);
 }
 
-// TODO Bind, Ready, Accept traits
+// TODO Bind, Ready, Accept, Loop (is_terminated) traits
 // pub trait Bind {
 // 
 //     fn 

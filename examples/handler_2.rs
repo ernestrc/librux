@@ -11,7 +11,8 @@ use rux::error::Error;
 use rux::poll::*;
 use rux::fcntl::*;
 use rux::stat::*;
-use rux::{close as rclose, read as rread, write as rwrite, IOProtocol, Action, Result, Slab, Entry};
+use rux::{close as rclose, read, Shutdown, shutdown as rshutdown, write, IOProtocol,
+          Action, Result, Slab, Entry};
 
 use super::Smeagol;
 
@@ -23,6 +24,8 @@ enum State {
     Idle,
     ReadyOut,
     Parsed(bool),
+    Shutdown,
+    Closed,
     Close,
     Error(bool),
     Reset,
@@ -32,30 +35,6 @@ enum State {
 struct Connection {
     pub state: State,
     fd: RawFd,
-}
-
-fn write(fd: &RawFd, bytes: &[u8]) -> usize {
-    trace!("write()");
-
-    if let Ok(Some(cnt)) = rwrite(*fd, bytes) {
-        trace!("write() bytes {}", cnt);
-        return cnt;
-    }
-    trace!("write(): empty buf");
-    0
-}
-
-fn read(fd: &RawFd, buffer: &mut ByteBuffer) -> usize {
-    trace!("read()");
-
-    if let Ok(Some(n)) = rread(*fd, From::from(&mut *buffer)) {
-        trace!("read(): {:?} bytes", n);
-        buffer.extend(n);
-        return n;
-    }
-
-    trace!("read(): socket not ready");
-    0
 }
 
 
@@ -68,6 +47,7 @@ impl Connection {
     }
 
     fn state(&mut self, state: State) -> State {
+        self.state = state;
         self.state
     }
 
@@ -83,22 +63,35 @@ impl Connection {
             return self.state(State::Close);
         }
 
-        if kind.contains(EPOLLERR) {
-            trace!("socket fd {}: EPOLLERR", &self.fd);
-            return self.state(State::Close);
-        }
-
         if kind.contains(EPOLLIN) {
             trace!("socket fd {}: EPOLLIN", &self.fd);
-            read(&self.fd, bufin);
+            match read(self.fd, From::from(&mut *bufin)) {
+                Ok(Some(cnt)) => {
+                    if cnt > 0 {
+                        bufin.extend(cnt);
+                    } else {
+                        self.state(State::Closed);
+                    }
+                }
+                Ok(None) => {},
+                Err(e) => {
+                    error!("read fd {}: {:?}", self.fd, e);
+                    self.state(State::Error(false));
+                }
+            }
             let cnt = self.try_frame(bufin, bufout);
             if cnt > 0 {
                 bufin.consume(cnt);
             }
         }
 
+        if kind.contains(EPOLLERR) {
+            error!("socket fd {}: EPOLLERR", &self.fd);
+            self.state(State::Error(false));
+        }
+
         if kind.contains(EPOLLOUT) {
-            trace!("socket fd {}: EPOLLOUT", &self.fd);
+            trace!("socket fd {}: EPOLLOUT: {:?}", &self.fd, &self.state);
             match self.state {
                 State::Parsed(keep_alive) => self.ok(keep_alive),
                 State::Error(keep_alive) => self.error(keep_alive),
@@ -117,6 +110,7 @@ impl Connection {
 
         let status = match r.parse(From::from(&*bufin)) {
             Err(e) => {
+                error!("parse http request error: {:?}", e);
                 self.state(State::Error(false));
                 return 0;
             }
@@ -132,7 +126,7 @@ impl Connection {
         let mut length = None;
         let mut connection = None;
         for header in r.headers.into_iter() {
-            if header.name == "Content-Length" {
+            if header.name == "Content-Length" || header.name == "Content-length" {
                 length = Some(header.value);
             }
             if header.name == "Connection" {
@@ -151,16 +145,16 @@ impl Connection {
         let conn_maybe = connection.and_then(|s| str::from_utf8(s).ok());
 
         if len_maybe.is_err() {
-            trace!("try_frame(): error decoding length: {:?}", &len_maybe);
-            self.state = State::Error(false);
+            error!("error decoding content length header value: {:?}", &len_maybe);
+            self.state(State::Error(false));
             return amt;
         }
 
         let length_maybe = len_maybe.unwrap().parse();
 
         if length_maybe.is_err() {
-            trace!("try_frame(): error parsing length: {:?}", &length_maybe);
-            self.state = State::Error(false);
+            error!("error parsing length: {:?}", &length_maybe);
+            self.state(State::Error(false));
             return amt;
         }
 
@@ -180,8 +174,8 @@ impl Connection {
                 }
                 // TODO
                 Err(e) => {
+                    error!("failed to copy data to bufout {:?}", e);
                     self.state(State::Error(keep_alive));
-                    error!("failed to copy data to bufout {:?}", e)
                 }
             }
         }
@@ -192,12 +186,25 @@ impl Connection {
     }
 
     fn respond(&mut self, keep_alive: bool, msg: &'static [u8]) -> State {
-        write(&self.fd, OK);
+        trace!("respond(): keep-alive: {:?}", &keep_alive);
+        let result = write(self.fd, msg);
+
+        if result.is_err() {
+            error!("error writing http response {:?}", result);
+            return self.state(State::Error(keep_alive));
+        }
+
+        let w = result.unwrap();
+
+        if w.is_none() {
+            return self.state(State::Parsed(keep_alive));
+        }
+
         if keep_alive {
             return self.state(State::Reset);
         }
 
-        self.state(State::Close)
+        self.state(State::Shutdown)
     }
 
     fn ok(&mut self, keep_alive: bool) -> State {
@@ -205,6 +212,7 @@ impl Connection {
     }
 
     fn error(&mut self, keep_alive: bool) -> State {
+        error!("500 INTERNAL SERVER ERROR: {:?}", self.fd);
         self.respond(keep_alive, ERR)
     }
 }
@@ -223,7 +231,7 @@ pub struct SmeagolHandler {
 // TODO rollback policy + fix alloc
 fn next_file(elogdir: &str, elogdirid: usize) -> RawFd {
     open(format!("{}/{}/events.log", elogdir, elogdirid).as_str(),
-         O_CREAT | O_WRONLY | O_APPEND | O_CLOEXEC | O_NONBLOCK,
+         O_CREAT | O_WRONLY | O_APPEND,
          S_IWUSR)
         .unwrap()
 }
@@ -250,30 +258,51 @@ impl SmeagolHandler {
         }
     }
 
+    fn shutdown(&mut self, fd: RawFd, idx: usize) {
+        trace!("shutting down {} on {}", &fd, &idx);
+        // FIXME, for now ignore ENOTCONN
+        rshutdown(fd, Shutdown::Write);
+    }
+
     fn close(&mut self, fd: RawFd, idx: usize) {
-        rclose(fd);
-        self.epfd.unregister(fd);
+        trace!("closing {} on {}", &fd, &idx);
+        perror!("{}", rclose(fd));
         self.connections.remove(idx);
         self.buffers[idx].clear();
     }
 
     //  TODO rollback try_log should create new files as it sees fit
-    //  TODO timerfd
+    //  TODO timerfd to flush periodically
     #[inline]
     fn log(&mut self) -> usize {
         let buflen = self.bufout.len();
-        if buflen > self.buffering {
-            let fd = &self.currfile;
-            // TODO alignment!
-            let cnt = write(fd, From::from(&self.bufout));
-            trace!("log() {} bytes", cnt);
-            if cnt > 0 {
-                self.bufout.consume(cnt);
-                return cnt;
-            }
+
+        if buflen < self.buffering {
+            trace!("log() 0 bytes written: buffer len: {:?}", buflen);
+            return 0;
         }
-        trace!("log() 0 bytes written: buffer len: {:?}", buflen);
-        0
+
+        let fd = self.currfile;
+        // TODO alignment!
+        let res = write(fd, From::from(&self.bufout));
+
+        if res.is_err() {
+            return 0;
+        }
+
+        let w = res.unwrap();
+
+        if w.is_none() {
+            return 0;
+        }
+
+        let cnt: usize = w.unwrap();
+        trace!("log() {} bytes", cnt);
+
+        if cnt > 0 {
+            self.bufout.consume(cnt);
+        }
+        return cnt;
     }
 }
 
@@ -320,9 +349,9 @@ impl Handler<EpollEvent> for SmeagolHandler {
         let (idx, fd) = match decode(&self.epfd, event, &mut self.connections) {
             Ok((idx, fd)) => (idx, fd),
             Err((e, fd)) => {
-                error!("{:?}", e);
-                perror!("{}", rclose(fd));
                 perror!("{}", self.epfd.unregister(fd));
+                error!("closing: {:?}", e);
+                perror!("{}", rclose(fd));
                 return;
             }
         };
@@ -333,6 +362,8 @@ impl Handler<EpollEvent> for SmeagolHandler {
             State::Parsed(_) => {}
             State::Error(_) => {}
             State::Close => self.close(fd, idx),
+            State::Closed => self.close(fd, idx),
+            State::Shutdown => self.shutdown(fd, idx),
             State::Reset => {
                 self.buffers[idx].clear();
                 self.connections[idx].state(State::Idle);

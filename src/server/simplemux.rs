@@ -48,9 +48,8 @@ impl SimpleMuxConfig {
         let inet = try!(addr.to_socket_addrs().unwrap().next().ok_or("could not parse sockaddr"));
         let sockaddr = SockAddr::Inet(InetAddr::from_std(&inet));
 
-        // TODO provide good default depending on the number of I/O threads
-        let max_conn = 50_000;
         let cpus = ::num_cpus::get();
+        let max_conn = 5000 * cpus;
         let io_threads = cpus - 2; //1 for logging/signals + 1 for connection accepting + n
 
         Ok(SimpleMuxConfig {
@@ -89,7 +88,7 @@ impl<P> SimpleMux<P>
         // create socket
         let srvfd = try!(socket(AddressFamily::Inet,
                                 SockType::Stream,
-                                SOCK_NONBLOCK | SOCK_CLOEXEC,
+                                SOCK_NONBLOCK,
                                 0)) as i32;
 
         setsockopt(srvfd, sockopt::ReuseAddr, &true).unwrap();
@@ -119,7 +118,7 @@ impl<P> Handler<EpollEvent> for SimpleMux<P>
         trace!("new()");
 
         // only monitoring events from srvfd
-        match eintr!(accept4, "accept4", self.srvfd, SOCK_NONBLOCK | SOCK_CLOEXEC) {
+        match eintr!(accept4, "accept4", self.srvfd, SOCK_NONBLOCK) {
             Ok(Some(clifd)) => {
 
                 trace!("accept4: accepted new tcp client {}", &clifd);
