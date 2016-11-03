@@ -92,6 +92,8 @@ impl<P> SimpleMux<P>
                                 SOCK_NONBLOCK | SOCK_CLOEXEC,
                                 0)) as i32;
 
+        setsockopt(srvfd, sockopt::ReuseAddr, &true).unwrap();
+
         Ok(SimpleMux {
             protocol: protocol,
             sockaddr: sockaddr,
@@ -128,7 +130,7 @@ impl<P> Handler<EpollEvent> for SimpleMux<P>
                 let epfd: EpollFd = *self.epfds.get(next).unwrap();
 
                 let info = EpollEvent {
-                    events: EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP,
+                    events: EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP | EPOLLONESHOT,
                     // start with IOProtocol handler 0
                     data: self.protocol.encode(Action::New(0.into(), clifd)),
                 };
@@ -183,7 +185,7 @@ impl<P> ServerImpl for SimpleMux<P>
         let cepfd = self.cepfd;
         let protocol = self.protocol;
 
-        for _ in 0..io_threads {
+        for i in 0..io_threads {
 
             let epfd = EpollFd::new(try!(epoll_create()));
 
@@ -193,7 +195,7 @@ impl<P> ServerImpl for SimpleMux<P>
                 // add the set of signals to the signal mask for all threads
                 mask.thread_block().unwrap();
                 let mut epoll =
-                    Epoll::from_fd(epfd, protocol.get_handler(From::from(0_usize), epfd), -1);
+                    Epoll::from_fd(epfd, protocol.get_handler(From::from(0_usize), epfd, i), -1);
 
                 perror!("epoll.run()", epoll.run());
             });

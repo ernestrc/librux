@@ -1,4 +1,9 @@
-use std::os::unix::io::RawFd;
+use std::os::unix::io::{RawFd, AsRawFd};
+use std::path::Path;
+use std::fs::OpenOptions;
+use std::io;
+use std::str;
+use std::thread;
 
 use rux::handler::Handler;
 use rux::buf::ByteBuffer;
@@ -8,53 +13,74 @@ use rux::fcntl::*;
 use rux::stat::*;
 use rux::{close, read, write, IOProtocol, Action, Result};
 
-const BUF_CAP: usize = 1024 * 1024;
-const OK: &'static [u8] = b"HTTP/1.1 200 OK\r\nAccess-Control-Allow-Headers: origin, content-type, accept\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Max-Age: 1728000\r\nAllow-Control-Allow-Methods: POST\r\nContent-Type: text/plain\r\nServer: Smeagol/0.1\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n";
+use super::Smeagol;
 
-#[derive(Clone, Copy)]
-pub struct SmeagolProto;
+static OK: &'static [u8] = b"HTTP/1.1 200 OK\r\nAccess-Control-Allow-Headers: origin, content-type, accept\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Max-Age: 1728000\r\nAllow-Control-Allow-Methods: GET,POST,OPTIONS\r\nContent-Type: text/plain\r\nServer: Smeagol/0.1\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n";
 
-impl IOProtocol for SmeagolProto {
-    type Protocol = usize;
-
-    fn get_handler(&self, _: usize, epfd: EpollFd) -> Box<Handler<EpollEvent>> {
-        Box::new(SmeagolHandler::new(epfd))
-    }
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum State {
+    // idle or buffering in request
+    Ibin,
+    // writeable, buffering
+    Rin,
+    // writeable, parsed
+    Rout,
 }
 
-
 pub struct SmeagolHandler {
-    logs: RawFd,
-    epfd: EpollFd,
-    eproto: SmeagolProto,
+    state: State,
+    currfile: RawFd,
     bufin: ByteBuffer,
     bufout: ByteBuffer,
+    elogdirid: usize,
+    elogdir: &'static str,
+    buffering: usize,
+}
+
+// TODO rollback policy + fix alloc
+fn next_file(elogdir: &str, elogdirid: usize) -> RawFd {
+    open(format!("{}/{}/events.log", elogdir, elogdirid).as_str(),
+         O_CREAT | O_WRONLY | O_APPEND | O_CLOEXEC | O_NONBLOCK,
+         S_IWUSR)
+        .unwrap()
 }
 
 impl SmeagolHandler {
-    pub fn new(epfd: EpollFd) -> SmeagolHandler {
+    pub fn new(elogdir: &'static str,
+               elogdirid: usize,
+               buffer_size: usize,
+               buffering: usize)
+               -> SmeagolHandler {
         trace!("new()");
-        let eproto = SmeagolProto;
-        let logsfd = open("/tmp/smeagol/events.log",
-                          O_CREAT | O_WRONLY | O_APPEND | O_CLOEXEC,
-                          S_IWUSR)
-            .unwrap();
         SmeagolHandler {
-            epfd: epfd,
-            eproto: eproto,
-            logs: logsfd,
-            bufin: ByteBuffer::with_capacity(BUF_CAP),
-            bufout: ByteBuffer::with_capacity(BUF_CAP),
+            state: State::Ibin,
+            elogdirid: elogdirid,
+            elogdir: elogdir,
+            currfile: next_file(elogdir, elogdirid),
+            bufin: ByteBuffer::with_capacity(buffer_size),
+            bufout: ByteBuffer::with_capacity(buffer_size),
+            buffering: buffering,
         }
     }
 
-    #[inline]
+    fn close(&mut self, fd: RawFd) -> Result<()> {
+        close(fd);
+        if self.bufout.len() > 0 {
+            let fd = &self.currfile;
+            let cnt = self.on_writable(fd, From::from(&self.bufout));
+            trace!("try_log() {} bytes", cnt);
+            if cnt > 0 {
+                self.bufout.consume(cnt);
+            }
+        }
+        Ok(())
+    }
+
     fn on_error(&mut self, fd: &RawFd) -> Result<()> {
         error!("on_error(): {:?}", fd);
         Ok(())
     }
 
-    #[inline]
     fn on_readable(&mut self, fd: &RawFd) -> usize {
         trace!("on_readable()");
 
@@ -68,7 +94,6 @@ impl SmeagolHandler {
         0
     }
 
-    #[inline]
     fn on_writable(&self, fd: &RawFd, bytes: &[u8]) -> usize {
         trace!("on_writable()");
 
@@ -80,27 +105,80 @@ impl SmeagolHandler {
         0
     }
 
-    #[inline]
-    fn try_frame(&mut self) -> usize {
-        // TODO get data
-        if !self.bufin.is_empty() {
-            let mut r = ::httparse::Request::new(&mut []);
-            let status = r.parse(From::from(&self.bufin));
-            let amt = match status {
-                Ok(::httparse::Status::Complete(amt)) => amt,
-                Ok(::httparse::Status::Partial) => return 0,
-                Err(_) => return 0,// FIXME
-            };
+    fn try_frame(&mut self) -> (bool, usize) {
+        trace!("try_frame()");
+        let mut headers = [::httparse::EMPTY_HEADER; 16];
+        let mut r = ::httparse::Request::new(&mut headers);
+
+        let status = r.parse(From::from(&self.bufin));
+        if status.is_err() || !status.unwrap().is_complete() {
+            trace!("try_frame(): status {:?}", status);
+            return (true, 0);
         }
-        0
+
+        let amt = status.unwrap().unwrap();
+
+        let mut length = None;
+        let mut connection = None;
+        for header in r.headers.into_iter() {
+            if header.name == "Content-Length" {
+                length = Some(header.value);
+            }
+            if header.name == "Connection" {
+                connection = Some(header.value);
+            }
+        }
+
+        if length.is_none() {
+            trace!("try_frame(): no content length: {:?}", &r.headers);
+            // no Content-Length header
+            // TODO check rfc
+            return (false, amt);
+        }
+
+        let len_maybe = str::from_utf8(length.unwrap());
+        let conn_maybe = connection.and_then(|s| str::from_utf8(s).ok());
+
+        if len_maybe.is_err() {
+            trace!("try_frame(): error decoding length: {:?}", &len_maybe);
+            return (false, amt);
+        }
+
+        let length_maybe = len_maybe.unwrap().parse();
+
+        if length_maybe.is_err() {
+            trace!("try_frame(): error parsing length: {:?}", &length_maybe);
+            return (false, amt);
+        }
+
+        let length: usize = length_maybe.unwrap();
+        let keep_alive = conn_maybe.map(|c| c == "keep-alive").unwrap_or_else(|| false);
+        let buflen = self.bufin.len();
+        let reqb = length + amt;
+
+        if reqb <= buflen {
+            let cnt_maybe = self.bufout.write(&mut self.bufin.slice(amt));
+
+            if cnt_maybe.is_ok() {
+                let sum = length + amt;
+                trace!("try_frame(): successfully copied payload to bufout: {:?}",
+                       &sum);
+                return (keep_alive, sum);
+            }
+            // FIXME bufout might be full
+        }
+        trace!("try_frame(): could not parse payload: reqb {:?}; buflen {:?}",
+               &reqb,
+               &buflen);
+        (true, 0)
     }
 
+    //  TODO rollback try_log should create new files as it sees fit
     #[inline]
     fn try_log(&mut self) -> usize {
-        let non_empty = !self.bufout.is_empty();
-        trace!("try_log() non_empty: {}", non_empty);
-        if non_empty {
-            let fd = &self.logs;
+        let buflen = self.bufout.len();
+        if buflen > self.buffering {
+            let fd = &self.currfile;
             let cnt = self.on_writable(fd, From::from(&self.bufout));
             trace!("try_log() {} bytes", cnt);
             if cnt > 0 {
@@ -108,7 +186,7 @@ impl SmeagolHandler {
                 return cnt;
             }
         }
-        trace!("try_log() 0 bytes");
+        trace!("try_log() 0 bytes written: buffer len: {:?}", buflen);
         0
     }
 
@@ -119,13 +197,6 @@ impl SmeagolHandler {
     }
 }
 
-// idle, buffering in request
-const IBIN: &'static usize = &1;
-// ready to respond but buffering
-const RIN: &'static usize = &2;
-// ready to respond
-const ROUT: &'static usize = &3;
-
 impl Handler<EpollEvent> for SmeagolHandler {
     fn is_terminated(&self) -> bool {
         false
@@ -134,16 +205,18 @@ impl Handler<EpollEvent> for SmeagolHandler {
     fn ready(&mut self, event: &EpollEvent) {
 
         let kind = event.events;
-        let mut next: usize = 0;
+        let keep = true;
 
-        let (state, fd) = match self.eproto.decode(event.data) {
-            Action::New(_, fd) => (*IBIN, fd),
-            Action::Notify(s, fd) => (s, fd),
+        let fd = match Smeagol.decode(event.data) {
+            Action::New(_, fd) => fd,
+            Action::Notify(_, fd) => fd,
         };
+
+        let mut next: State = self.state;
 
         if kind.contains(EPOLLRDHUP) || kind.contains(EPOLLHUP) {
             trace!("socket fd {}: EPOLLHUP", &fd);
-            close(fd);
+            perror!("close()", self.close(fd));
             return;
         }
 
@@ -156,41 +229,47 @@ impl Handler<EpollEvent> for SmeagolHandler {
         if kind.contains(EPOLLIN) {
             trace!("socket fd {}: EPOLLIN", fd);
             self.on_readable(&fd);
-            let cnt = self.try_frame();
+            let (keep, cnt) = self.try_frame();
             if cnt > 0 {
                 self.bufin.consume(cnt);
                 self.try_log();
                 trace!("{}: state is ROUT", fd);
-                next = *ROUT;
+                next = State::Rout;
             }
         }
 
         if kind.contains(EPOLLOUT) {
             trace!("socket fd {}: EPOLLOUT", &fd);
-            if state == *ROUT || next == *ROUT {
-                if self.ok(&fd) > 0 {
-                    trace!("{}: state is IBIN", fd);
-                    next = *IBIN;
-                }
+            if (self.state == State::Rout || next == State::Rout) && self.ok(&fd) > 0 {
+                trace!("{}: state is IBIN", fd);
+                next = State::Ibin;
+                // FIXME
+                // perror!("close()", self.close(fd));
             } else {
                 trace!("{}: state is RIN", fd);
-                next = *RIN;
+                next = State::Rin;
             }
         }
 
-        if state != next {
-            trace!("{}: changing state from {} to {}", fd, state, next);
-            let action = Action::Notify(next, fd);
 
-            let interest = EpollEvent {
-                events: EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP | EPOLLET,
-                data: self.eproto.encode(action),
-            };
+        if self.state == State::Ibin {
+            trace!("{}: changing state from {:?} to {:?}",
+                   fd,
+                   &self.state,
+                   next);
+            // TODO reregister let action = Action::Notify(next, fd);
 
-            match self.epfd.reregister(fd, &interest) {
-                Ok(_) => {}
-                Err(e) => report_err!("reregister()", e),
-            }
+            // let interest = EpollEvent {
+            //     events: EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP | EPOLLET,
+            //     data: self.eproto.encode(action),
+            // };
+
+            // match self.epfd.reregister(fd, &interest) {
+            //     Ok(_) => {}
+            //     Err(e) => report_err!("reregister()", e),
+            // }
         }
+
+        self.state = next;
     }
 }

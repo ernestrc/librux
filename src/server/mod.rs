@@ -39,8 +39,8 @@ impl<L> Server<L>
 
         // signal mask to share across threads
         let mut mask = SigSet::empty();
-        mask.add(SIGINT).unwrap();
-        mask.add(SIGTERM).unwrap();
+        mask.add(SIGINT);
+        mask.add(SIGTERM);
 
         let loop_ms = im.get_loop_ms();
 

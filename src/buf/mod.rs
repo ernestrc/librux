@@ -7,7 +7,7 @@ use constants::DEFAULT_BUF_SIZE;
 ///
 /// FIXME: if pos and limit never catch up, buffer will
 /// overflow, when there might be some extra capacity
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ByteBuffer {
     limit: usize,
     pos: usize,
@@ -60,6 +60,14 @@ impl ByteBuffer {
         buf[..amt].copy_from_slice(a);
 
         Ok(amt)
+    }
+
+    pub fn slice<'a>(&'a self, offset: usize) -> &'a [u8] {
+        &self.buf[self.pos + offset..self.limit]
+    }
+
+    pub fn mut_slice<'a>(&'a mut self, offset: usize) -> &'a mut [u8] {
+        &mut self.buf[self.pos + offset..self.limit]
     }
 
     #[inline]

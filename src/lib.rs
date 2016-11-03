@@ -98,6 +98,7 @@ pub use std::os::unix::io::{AsRawFd, RawFd};
 pub use nix::unistd::close;
 pub use nix::fcntl;
 pub use nix::sys::stat;
+pub use slab::*;
 
 pub fn write(fd: RawFd, buf: &[u8]) -> Result<Option<usize>> {
     let b = try!(eintr!(unistd::write, "unistd::write", fd, buf));

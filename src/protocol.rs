@@ -16,7 +16,7 @@ pub trait IOProtocol
 {
     type Protocol: From<usize> + Into<usize> + Copy;
 
-    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd) -> Box<Handler<EpollEvent>>;
+    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd, id: usize) -> Box<Handler<EpollEvent>>;
 
     fn encode(&self, action: Action<Self>) -> u64 {
         match action {

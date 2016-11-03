@@ -12,6 +12,7 @@ use poll::*;
 
 // TODO should take whether epoll mode is ET or LT (as marker traits)
 pub struct SyncHandler<F: IOProtocol> {
+    id: usize,
     epfd: EpollFd,
     handlers: Slab<RefCell<Box<Handler<EpollEvent>>>, usize>,
     eproto: F,
@@ -20,21 +21,24 @@ pub struct SyncHandler<F: IOProtocol> {
 
 impl<F: IOProtocol> SyncHandler<F> {
     pub fn new(epfd: EpollFd,
+               id: usize,
                eproto: F,
                rproto: F::Protocol,
                max_handlers: usize)
                -> SyncHandler<F> {
         trace!("new()");
+        // TODO assert!(rproto.into() > 0);
         SyncHandler {
+            id: id,
             epfd: epfd,
-            handlers: Slab::new(max_handlers),
+            handlers: Slab::with_capacity(max_handlers),
             eproto: eproto,
             rproto: rproto,
         }
     }
 
     fn notify(&mut self, fd: RawFd, id: usize, event: &EpollEvent) {
-        trace!("notify()");
+        trace!("notify(): {:?}; fd {:?}", &id, &fd);
 
         let events = event.events;
 
@@ -47,7 +51,6 @@ impl<F: IOProtocol> SyncHandler<F> {
             }
             perror!("unregister()", self.epfd.unregister(fd));
             perror!("close()", unistd::close(fd));
-            debug!("handlers: {:?}", self.handlers);
         } else {
             let handler = &mut self.handlers[id];
             handler.borrow_mut().ready(event);
@@ -56,7 +59,6 @@ impl<F: IOProtocol> SyncHandler<F> {
 }
 
 impl<F: IOProtocol> Handler<EpollEvent> for SyncHandler<F> {
-
     fn is_terminated(&self) -> bool {
         false
     }
@@ -69,16 +71,23 @@ impl<F: IOProtocol> Handler<EpollEvent> for SyncHandler<F> {
             Action::New(proto, fd) => {
                 // TODO a little bit arbitrary; protocol should provide methods for next
                 // handler in the stack
-                let next = if proto.into() == 0_usize { self.rproto } else { proto };
-                trace!("ready(): new handler ({})", next.into());
+                let next = if proto.into() == 0_usize {
+                    self.rproto
+                } else {
+                    proto
+                };
+
+                let epfd = self.epfd;
+                let proto = self.eproto;
 
                 if let Ok(id) = self.handlers
-                    .insert(RefCell::new(self.eproto.get_handler(next, self.epfd))) {
+                    .insert(RefCell::new(proto.get_handler(next, epfd, self.id))) {
+                    trace!("ready(): new handler ({} {})", next.into(), &id);
 
                     let action: Action<F> = Action::Notify(id, fd);
 
                     let interest = EpollEvent {
-                        events: EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP,
+                        events: EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP | EPOLLET,
                         data: self.eproto.encode(action),
                     };
 
