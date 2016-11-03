@@ -1,5 +1,3 @@
-use poll::EpollEvent;
-
 pub mod echo;
 pub mod sync;
 
