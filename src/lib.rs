@@ -84,7 +84,7 @@ pub mod server;
 pub mod logging;
 pub mod error;
 
-use nix::unistd;
+use std::os::unix::io::{AsRawFd, RawFd};
 
 pub use poll::{Epoll, EpollFd, EpollEvent};
 pub use handler::Handler;
@@ -94,12 +94,11 @@ pub use logging::{LoggingBackend, SimpleLogging};
 pub use error::Result;
 pub use protocol::{IOProtocol, Action};
 
-pub use std::os::unix::io::{AsRawFd, RawFd};
+pub use nix::unistd;
 pub use nix::unistd::close;
 pub use nix::sys::socket::{shutdown, Shutdown};
 pub use nix::fcntl;
 pub use nix::sys::stat;
-pub use slab::*;
 
 pub fn write(fd: RawFd, buf: &[u8]) -> Result<Option<usize>> {
     let b = try!(eintr!(unistd::write, "unistd::write", fd, buf));

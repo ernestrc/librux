@@ -12,7 +12,7 @@ impl IOProtocol for EchoProtocol {
 
     type Protocol = usize;
 
-    fn get_handler(&self, _: usize, _: EpollFd) -> Box<Handler<EpollEvent>> {
+    fn get_handler(&self, _: usize, _: EpollFd, _: usize) -> Box<Handler<EpollEvent>> {
         Box::new(EchoHandler::new(EchoProtocol))
     }
 }

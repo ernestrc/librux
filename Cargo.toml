@@ -21,6 +21,3 @@ lazy_static = "0.2.1"
 slab = "0.3.0"
 time = "0.1.35"
 pad = "0.1.4"
-
-# example
-httparse = "*"
