@@ -105,6 +105,7 @@ impl<F: IOProtocol> Handler<EpollEvent> for SyncHandler<F> {
             // so that this handler takes Handlers of Action
             // and we don't have to decode the event twice
             Action::Notify(id, fd) => self.notify(fd, id, ev),
+            Action::NoAction => {}
         }
     }
 }

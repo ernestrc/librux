@@ -10,6 +10,7 @@ use poll::*;
 use super::logging::LoggingBackend;
 
 pub mod simplemux;
+pub mod mux;
 
 /// Server facade.
 /// TODO rename to something more generic, as it could perfectly be used
