@@ -9,7 +9,7 @@ pub type HandlerId = usize;
 pub enum Action<P: IOProtocol> {
     New(P::Protocol, RawFd),
     Notify(HandlerId, RawFd),
-    NoAction
+    NoAction(u64),
 }
 
 pub trait IOProtocol
@@ -25,8 +25,8 @@ pub trait IOProtocol
             Action::New(protocol, fd) => {
                 let protocol: usize = protocol.into();
                 ((fd as u64) << 31) | ((protocol as u64) << 15) | 1
-            },
-            Action::NoAction => 0
+            }
+            Action::NoAction(data) => data,
         }
     }
 
@@ -36,7 +36,7 @@ pub trait IOProtocol
         match data & 0x7fff {
             0 => Action::Notify(arg1, fd),
             1 => Action::New(From::from(arg1), fd),
-            _ => Action::NoAction
+            _ => Action::NoAction(data),
         }
     }
 }

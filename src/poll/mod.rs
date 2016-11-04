@@ -8,7 +8,7 @@ use error::{Result, Error};
 use handler::Handler;
 
 pub use nix::sys::epoll::{epoll_create, EpollEvent, EpollEventKind, EPOLLIN, EPOLLOUT, EPOLLERR,
-                          EPOLLHUP, EPOLLET, EPOLLONESHOT, EPOLLRDHUP};
+                          EPOLLHUP, EPOLLET, EPOLLONESHOT, EPOLLRDHUP, EPOLLEXCLUSIVE, EPOLLWAKEUP};
 
 static EVENTS_N: &'static usize = &1000;
 

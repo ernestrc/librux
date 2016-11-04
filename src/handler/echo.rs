@@ -79,7 +79,7 @@ impl <P: IOProtocol> Handler<EpollEvent> for EchoHandler<P> {
         let fd = match self.eproto.decode(event.data) {
             Action::New(_, clifd) => clifd, 
             Action::Notify(_, clifd) => clifd,
-            Action::NoAction => panic!("unexpected NoAction")
+            Action::NoAction(data) => data as i32
         };
 
         let kind = event.events;

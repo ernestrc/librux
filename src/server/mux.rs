@@ -129,50 +129,47 @@ impl<P> ServerImpl for Mux<P>
         };
 
         try!(self.cepfd.register(self.srvfd, &ceinfo));
+        trace!("registered main thread's interest on {}", self.srvfd);
 
         let io_threads = self.io_threads;
         let loop_ms = self.loop_ms;
         let cepfd = self.cepfd;
         let protocol = self.protocol;
+        let srvfd = self.srvfd;
 
-        for i in 0..io_threads {
+        for i in 1..io_threads + 1 {
+
 
             let epfd = EpollFd::new(try!(epoll_create()));
 
-            try!(eintr!(bind, "bind", self.srvfd, &self.sockaddr));
-            info!("bind: fd {} to {}", self.srvfd, self.sockaddr);
-
-            try!(eintr!(listen, "listen", self.srvfd, self.max_conn));
-            info!("listen: fd {} with max connections: {}",
-                  self.srvfd,
-                  self.max_conn);
-
             let ceinfo = EpollEvent {
-                events: EPOLLIN | EPOLLOUT | EPOLLERR,
-                data: self.srvfd as u64,
+                events: EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLEXCLUSIVE | EPOLLWAKEUP,
+                data: srvfd as u64,
             };
 
-            try!(epfd.register(self.srvfd, &ceinfo));
+            try!(epfd.register(srvfd, &ceinfo));
+            trace!("registered thread's {} interest on {}", i, srvfd);
 
 
             self.epfds.push(epfd);
 
             thread::spawn(move || {
+                trace!("spawned new thread {}", i);
                 // add the set of signals to the signal mask for all threads
                 mask.thread_block().unwrap();
                 let mut epoll =
                     Epoll::from_fd(epfd, protocol.get_handler(From::from(0_usize), epfd, i), loop_ms);
 
+                info!("starting thread's {} event loop", i);
                 perror!("epoll.run()", epoll.run());
             });
         }
 
         debug!("created {} I/O epoll instances", self.io_threads);
 
-
         let mut epoll = Epoll::from_fd(cepfd, protocol.get_handler(From::from(0_usize), cepfd, 0), loop_ms);
 
-        // run accept event loop
+        info!("starting main event loop");
         epoll.run()
     }
 }
