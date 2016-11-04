@@ -95,10 +95,9 @@ pub use error::Result;
 pub use protocol::{IOProtocol, Action};
 
 pub use nix::unistd;
-pub use nix::unistd::close;
-pub use nix::sys::socket::{shutdown, Shutdown};
 pub use nix::fcntl;
-pub use nix::sys::stat;
+pub use nix::sys;
+pub use nix::unistd::close;
 
 pub fn write(fd: RawFd, buf: &[u8]) -> Result<Option<usize>> {
     let b = try!(eintr!(unistd::write, "unistd::write", fd, buf));

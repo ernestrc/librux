@@ -16,16 +16,21 @@ use protocol::{IOProtocol, Action};
 /// at the specified address. It instantiates one epoll to accept new connections
 /// and one instance per cpu left to perform I/O.
 ///
+/// TODO rename to something more interesting
+/// TODO think about how to support request pipelining
+///
+/// Events are handled synchronously TODO explain why useful for RPC or protocols
+/// that support request/message pipelining
+///
 /// New connections are load balanced from the connections epoll to the rest in a round-robin fashion.
-pub struct SimpleMux<P: IOProtocol> {
+pub struct SimpleMux<'a, P: IOProtocol> {
     srvfd: RawFd,
     cepfd: EpollFd,
     sockaddr: SockAddr,
     max_conn: usize,
     io_threads: usize,
     loop_ms: isize,
-    next: usize,
-    epfds: Vec<EpollFd>,
+    epfds: ::std::slice::Iter<'a, EpollFd>,
     protocol: P,
     terminated: bool,
 }
@@ -67,10 +72,10 @@ impl SimpleMuxConfig {
     }
 }
 
-impl<P> SimpleMux<P>
+impl<'a, P> SimpleMux<'a, P>
     where P: IOProtocol
 {
-    pub fn new(config: SimpleMuxConfig, protocol: P) -> Result<SimpleMux<P>> {
+    pub fn new(config: SimpleMuxConfig, protocol: P) -> Result<SimpleMux<'a, P>> {
 
         let SimpleMuxConfig { io_threads, max_conn, sockaddr, loop_ms } = config;
 
@@ -94,23 +99,15 @@ impl<P> SimpleMux<P>
             srvfd: srvfd,
             max_conn: max_conn,
             io_threads: io_threads,
-            next: io_threads,
             loop_ms: loop_ms,
+            accepted: 0,
             terminated: false,
             epfds: Vec::with_capacity(io_threads),
         })
     }
-
-    fn get_next(&mut self) -> usize {
-        if self.next == 0 {
-            self.next = self.io_threads;
-        }
-        self.next -= 1;
-        self.next
-    }
 }
 
-impl<P> Handler<EpollEvent> for SimpleMux<P>
+impl<'a, P> Handler<EpollEvent> for SimpleMux<'a, P>
     where P: IOProtocol
 {
     fn is_terminated(&self) -> bool {
@@ -125,9 +122,10 @@ impl<P> Handler<EpollEvent> for SimpleMux<P>
 
                 trace!("accept4: accepted new tcp client {}", &clifd);
 
-                let next = self.get_next();
+                // round robin: TODO use iterator
+                let next = (self.accepted % self.io_threads as u64) as usize;
 
-                let epfd: &EpollFd = &self.epfds[next];
+                let epfd: EpollFd = *self.epfds.get(next).unwrap();
 
                 let info = EpollEvent {
                     events: EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP | EPOLLONESHOT,
@@ -142,6 +140,8 @@ impl<P> Handler<EpollEvent> for SimpleMux<P>
                 perror!("epoll_ctl", epfd.register(clifd, &info));
 
                 trace!("epoll_ctl: registered interests for {}", clifd);
+
+                self.accepted += 1;
             }
             Ok(None) => debug!("accept4: socket not ready"),
             Err(e) => error!("accept4: {}", e),
@@ -149,7 +149,7 @@ impl<P> Handler<EpollEvent> for SimpleMux<P>
     }
 }
 
-impl<P> ServerImpl for SimpleMux<P>
+impl<'a, P> ServerImpl for SimpleMux<'a, P>
     where P: IOProtocol + 'static
 {
     fn get_loop_ms(&self) -> isize {
@@ -211,7 +211,7 @@ impl<P> ServerImpl for SimpleMux<P>
 }
 
 
-impl<P> Drop for SimpleMux<P>
+impl<'a, P> Drop for SimpleMux<'a, P>
     where P: IOProtocol
 {
     fn drop(&mut self) {
