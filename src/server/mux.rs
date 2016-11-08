@@ -38,7 +38,11 @@ impl MuxConfig {
 
         let cpus = ::num_cpus::get();
         let max_conn = 5000 * cpus;
-        let io_threads = cpus - 2; //1 for logging/signals + 1 for connection accepting + n
+        let io_threads = if cpus > 3 {
+             cpus - 2 //1 for logging/signals + 1 main thread   
+        } else {
+            1
+        };
 
         Ok(MuxConfig {
             sockaddr: sockaddr,
