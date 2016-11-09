@@ -89,10 +89,10 @@ use std::os::unix::io::{AsRawFd, RawFd};
 pub use poll::{Epoll, EpollFd, EpollEvent};
 pub use handler::Handler;
 pub use handler::sync::SyncHandler;
-pub use server::{Server, ServerImpl};
+pub use server::{Server, Bind};
 pub use logging::{LoggingBackend, SimpleLogging};
 pub use error::Result;
-pub use protocol::{IOProtocol, Action};
+pub use protocol::{IOProtocol, StaticProtocol, DynamicProtocol, Action};
 
 pub use nix::unistd;
 pub use nix::fcntl;

@@ -3,10 +3,6 @@ use std::cmp;
 use error::{Result, ErrorKind};
 use constants::DEFAULT_BUF_SIZE;
 
-/// Naive buffer.
-///
-/// FIXME: if pos and limit never catch up, buffer will
-/// overflow, when there might be some extra capacity
 #[derive(Clone, Debug)]
 pub struct ByteBuffer {
     limit: usize,

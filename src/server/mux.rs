@@ -1,6 +1,7 @@
 use std::net::ToSocketAddrs;
 use std::thread;
 use std::os::unix::io::RawFd;
+use std::marker::PhantomData;
 
 use nix::sys::socket::*;
 use nix::sys::signalfd::*;
@@ -8,10 +9,14 @@ use nix::unistd;
 
 use error::{Error, Result};
 use poll::*;
-use server::ServerImpl;
-use protocol::IOProtocol;
+use protocol::StaticProtocol;
+use server::Bind;
+use handler::Handler;
 
-pub struct Mux<P: IOProtocol> {
+pub struct Mux<H, P>
+    where H: Handler<EpollEvent>,
+          P: StaticProtocol<H> + 'static
+{
     srvfd: RawFd,
     cepfd: EpollFd,
     sockaddr: SockAddr,
@@ -20,8 +25,9 @@ pub struct Mux<P: IOProtocol> {
     loop_ms: isize,
     next: usize,
     epfds: Vec<EpollFd>,
-    protocol: P,
     terminated: bool,
+    protocol: P,
+    _h: PhantomData<H>,
 }
 
 pub struct MuxConfig {
@@ -39,7 +45,7 @@ impl MuxConfig {
         let cpus = ::num_cpus::get();
         let max_conn = 5000 * cpus;
         let io_threads = if cpus > 3 {
-             cpus - 2 //1 for logging/signals + 1 main thread   
+            cpus - 2 //1 for logging/signals + 1 main thread
         } else {
             1
         };
@@ -65,10 +71,11 @@ impl MuxConfig {
     }
 }
 
-impl<P> Mux<P>
-    where P: IOProtocol
+impl<H, P> Mux<H, P>
+    where H: Handler<EpollEvent>,
+          P: StaticProtocol<H>
 {
-    pub fn new(config: MuxConfig, protocol: P) -> Result<Mux<P>> {
+    pub fn new(config: MuxConfig, protocol: P) -> Result<Mux<H, P>> {
 
         let MuxConfig { io_threads, max_conn, sockaddr, loop_ms } = config;
 
@@ -83,9 +90,9 @@ impl<P> Mux<P>
         setsockopt(srvfd, sockopt::ReuseAddr, &true).unwrap();
 
         Ok(Mux {
-            protocol: protocol,
             sockaddr: sockaddr,
             cepfd: cepfd,
+            protocol: protocol,
             srvfd: srvfd,
             max_conn: max_conn,
             io_threads: io_threads,
@@ -93,6 +100,7 @@ impl<P> Mux<P>
             loop_ms: loop_ms,
             terminated: false,
             epfds: Vec::with_capacity(io_threads),
+            _h: PhantomData {},
         })
     }
 
@@ -105,8 +113,9 @@ impl<P> Mux<P>
     }
 }
 
-impl<P> ServerImpl for Mux<P>
-    where P: IOProtocol + 'static
+impl<H, P> Bind for Mux<H, P>
+    where H: Handler<EpollEvent>,
+          P: StaticProtocol<H>
 {
     fn get_loop_ms(&self) -> isize {
         self.loop_ms
@@ -138,11 +147,10 @@ impl<P> ServerImpl for Mux<P>
         let io_threads = self.io_threads;
         let loop_ms = self.loop_ms;
         let cepfd = self.cepfd;
-        let protocol = self.protocol;
         let srvfd = self.srvfd;
+        let protocol = self.protocol;
 
         for i in 1..io_threads + 1 {
-
 
             let epfd = EpollFd::new(try!(epoll_create()));
 
@@ -161,8 +169,9 @@ impl<P> ServerImpl for Mux<P>
                 trace!("spawned new thread {}", i);
                 // add the set of signals to the signal mask for all threads
                 mask.thread_block().unwrap();
-                let mut epoll =
-                    Epoll::from_fd(epfd, protocol.get_handler(From::from(0_usize), epfd, i), loop_ms);
+                let mut epoll = Epoll::from_fd(epfd,
+                                               protocol.get_handler(From::from(0_usize), epfd, i),
+                                               loop_ms);
 
                 info!("starting thread's {} event loop", i);
                 perror!("epoll.run()", epoll.run());
@@ -171,7 +180,9 @@ impl<P> ServerImpl for Mux<P>
 
         debug!("created {} I/O epoll instances", self.io_threads);
 
-        let mut epoll = Epoll::from_fd(cepfd, protocol.get_handler(From::from(0_usize), cepfd, 0), loop_ms);
+        let mut epoll = Epoll::from_fd(cepfd,
+                                       protocol.get_handler(From::from(0_usize), cepfd, 0),
+                                       loop_ms);
 
         info!("starting main event loop");
         epoll.run()
@@ -179,8 +190,9 @@ impl<P> ServerImpl for Mux<P>
 }
 
 
-impl<P> Drop for Mux<P>
-    where P: IOProtocol
+impl<H, P> Drop for Mux<H, P>
+    where H: Handler<EpollEvent>,
+          P: StaticProtocol<H>
 {
     fn drop(&mut self) {
         let _ = unistd::close(self.srvfd).unwrap();

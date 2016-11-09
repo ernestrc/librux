@@ -16,8 +16,7 @@ pub mod mux;
 /// TODO rename to something more generic, as it could perfectly be used
 /// to implement clients
 ///
-/// Takes care of signals and logging, and delegates bind/listen/accept
-/// logic to `ServerImpl`.
+/// Takes care of signals and logging, and delegates bind logic to `Bind`.
 pub struct Server<L: LoggingBackend> {
     epfd: EpollFd,
     sigfd: SignalFd,
@@ -34,7 +33,7 @@ impl<L> Server<L>
 {
     /// Instantiates new Server with the given implementation
     /// and logging backend
-    pub fn bind<I: ServerImpl + Send + 'static>(im: I, lb: L) -> Result<()> {
+    pub fn bind<I: Bind + Send + 'static>(im: I, lb: L) -> Result<()> {
 
         trace!("bind()");
 
@@ -69,13 +68,13 @@ impl<L> Server<L>
                 })
                 .unwrap();
 
-            Box::new(Server {
+            Server {
                 epfd: epfd,
                 sigfd: sigfd,
                 _sigfd: fd as u64,
                 lb: lb,
                 terminated: false,
-            })
+            }
         }));
 
         let siginfo = EpollEvent {
@@ -127,7 +126,7 @@ impl<L: LoggingBackend> Handler<EpollEvent> for Server<L> {
 }
 
 
-pub trait ServerImpl {
+pub trait Bind {
 
     fn stop(&mut self);
 

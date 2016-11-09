@@ -1,3 +1,4 @@
+/*
 use std::net::ToSocketAddrs;
 use std::thread;
 use std::os::unix::io::RawFd;
@@ -221,4 +222,4 @@ impl<P> Drop for SimpleMux<P>
     fn drop(&mut self) {
         let _ = unistd::close(self.srvfd).unwrap();
     }
-}
+}*/

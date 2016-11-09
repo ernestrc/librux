@@ -12,12 +12,22 @@ pub enum Action<P: IOProtocol> {
     NoAction(u64),
 }
 
+pub trait StaticProtocol<H: Handler<EpollEvent>>
+    where Self: IOProtocol {
+    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd, id: usize) -> H;
+}
+
+pub trait DynamicProtocol 
+    where Self: IOProtocol {
+
+    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd, id: usize) -> Box<Handler<EpollEvent>>;
+
+}
+
 pub trait IOProtocol
     where Self: Sized + Send + Copy
 {
     type Protocol: From<usize> + Into<usize> + Copy;
-
-    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd, id: usize) -> Box<Handler<EpollEvent>>;
 
     fn encode(&self, action: Action<Self>) -> u64 {
         match action {

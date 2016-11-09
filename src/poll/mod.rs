@@ -21,15 +21,15 @@ lazy_static! {
     };
 }
 
-pub struct Epoll {
+pub struct Epoll<H: Handler<EpollEvent>> {
     pub epfd: EpollFd,
     loop_ms: isize,
-    handler: Box<Handler<EpollEvent>>,
+    handler: H,
     buf: Vec<EpollEvent>,
 }
 
-impl Epoll {
-    pub fn from_fd(epfd: EpollFd, handler: Box<Handler<EpollEvent>>, loop_ms: isize) -> Epoll {
+impl <H: Handler<EpollEvent>> Epoll<H> {
+    pub fn from_fd(epfd: EpollFd, handler: H, loop_ms: isize) -> Epoll<H> {
         Epoll {
             epfd: epfd,
             loop_ms: loop_ms,
@@ -38,8 +38,8 @@ impl Epoll {
         }
     }
 
-    pub fn new_with<F>(loop_ms: isize, newctl: F) -> Result<Epoll>
-        where F: FnOnce(EpollFd) -> Box<Handler<EpollEvent>>
+    pub fn new_with<F>(loop_ms: isize, newctl: F) -> Result<Epoll<H>>
+        where F: FnOnce(EpollFd) -> H
     {
 
         let fd = try!(epoll_create());
@@ -51,6 +51,7 @@ impl Epoll {
         Ok(Self::from_fd(epfd, handler, loop_ms))
     }
 
+    #[inline]
     fn wait(&self, dst: &mut [EpollEvent]) -> Result<usize> {
         trace!("wait()");
         let cnt = try!(epoll_wait(self.epfd.fd, dst, self.loop_ms));
@@ -81,7 +82,7 @@ impl Epoll {
     }
 }
 
-impl Drop for Epoll {
+impl <H: Handler<EpollEvent>> Drop for Epoll<H> {
     fn drop(&mut self) {
         let _ = unistd::close(self.epfd.fd);
     }
@@ -98,23 +99,28 @@ impl EpollFd {
     pub fn new(fd: RawFd) -> EpollFd {
         EpollFd { fd: fd }
     }
+
+    #[inline]
     fn ctl(&self, op: EpollOp, interest: &EpollEvent, fd: RawFd) -> Result<()> {
         try!(epoll_ctl(self.fd, op, fd, interest));
         Ok(())
     }
 
+    #[inline]
     pub fn reregister(&self, fd: RawFd, interest: &EpollEvent) -> Result<()> {
         trace!("reregister()");
         try!(self.ctl(EpollOp::EpollCtlMod, interest, fd));
         Ok(())
     }
 
+    #[inline]
     pub fn register(&self, fd: RawFd, interest: &EpollEvent) -> Result<()> {
         trace!("register()");
         try!(self.ctl(EpollOp::EpollCtlAdd, interest, fd));
         Ok(())
     }
 
+    #[inline]
     pub fn unregister(&self, fd: RawFd) -> Result<()> {
         trace!("unregister()");
         try!(self.ctl(EpollOp::EpollCtlDel, &NO_INTEREST, fd));
@@ -149,7 +155,6 @@ mod tests {
     }
 
     impl Handler for ChannelHandler {
-
         fn ready(&mut self, events: &EpollEvent) -> Result<()> {
             self.tx.send(*events).unwrap();
             Ok(())
@@ -163,12 +168,7 @@ mod tests {
 
         let loop_ms = 10;
 
-        let mut poll = Epoll::new_with(loop_ms, |_| {
-                ChannelHandler {
-                    tx: tx,
-                }
-            })
-            .unwrap();
+        let mut poll = Epoll::new_with(loop_ms, |_| ChannelHandler { tx: tx }).unwrap();
 
         let (rfd, wfd) = unistd::pipe2(O_NONBLOCK | O_CLOEXEC).unwrap();
 

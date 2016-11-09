@@ -7,11 +7,11 @@ use slab::Slab;
 
 use error::Error;
 use handler::*;
-use protocol::{IOProtocol, Action};
+use protocol::{DynamicProtocol, Action};
 use poll::*;
 
 // TODO should take whether epoll mode is ET or LT (as marker traits)
-pub struct SyncHandler<F: IOProtocol> {
+pub struct SyncHandler<F: DynamicProtocol> {
     id: usize,
     epfd: EpollFd,
     handlers: Slab<RefCell<Box<Handler<EpollEvent>>>, usize>,
@@ -19,7 +19,7 @@ pub struct SyncHandler<F: IOProtocol> {
     rproto: F::Protocol,
 }
 
-impl<F: IOProtocol> SyncHandler<F> {
+impl<F: DynamicProtocol> SyncHandler<F> {
     pub fn new(epfd: EpollFd,
                id: usize,
                eproto: F,
@@ -58,7 +58,7 @@ impl<F: IOProtocol> SyncHandler<F> {
     }
 }
 
-impl<F: IOProtocol> Handler<EpollEvent> for SyncHandler<F> {
+impl<F: DynamicProtocol> Handler<EpollEvent> for SyncHandler<F> {
     fn is_terminated(&self) -> bool {
         false
     }
