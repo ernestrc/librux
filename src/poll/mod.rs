@@ -43,7 +43,7 @@ impl <H: Handler<EpollEvent>> Epoll<H> {
             epfd: epfd,
             loop_ms: config.loop_ms,
             handler: handler,
-            buf: vec!(EpollEvent { events: EpollEventKind::empty(), data: 0 }; config.buffer_size),
+            buf: Vec::with_capacity(config.buffer_size),
         }
     }
 
@@ -63,7 +63,9 @@ impl <H: Handler<EpollEvent>> Epoll<H> {
     #[inline]
     fn run_once(&mut self) -> Result<()> {
 
-        let cnt = try!(epoll_wait(self.epfd.fd, self.buf.as_mut_slice(), self.loop_ms));
+        let dst = unsafe { ::std::slice::from_raw_parts_mut(self.buf.as_mut_ptr(), self.buf.capacity()) };
+        let cnt = try!(epoll_wait(self.epfd.fd, dst, self.loop_ms));
+        unsafe { self.buf.set_len(cnt) }
         trace!("run_once(): {} new events", cnt);
 
         for ev in self.buf.iter() {

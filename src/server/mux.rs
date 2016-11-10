@@ -25,7 +25,6 @@ pub struct Mux<H, P>
     max_conn: usize,
     io_threads: usize,
     epoll_config: EpollConfig,
-    epfds: Vec<EpollFd>,
     terminated: bool,
     protocol: P,
     d: PhantomData<H>,
@@ -55,7 +54,7 @@ impl MuxConfig {
             sockaddr: sockaddr,
             max_conn: max_conn,
             io_threads: io_threads,
-            epoll_config: Default::default()
+            epoll_config: Default::default(),
         })
     }
 
@@ -99,7 +98,6 @@ impl<H, P> Mux<H, P>
             io_threads: io_threads,
             epoll_config: epoll_config,
             terminated: false,
-            epfds: Vec::with_capacity(io_threads),
             d: PhantomData {},
         })
     }
@@ -129,7 +127,7 @@ impl<H, P> Bind for Mux<H, P>
               self.max_conn);
 
         let ceinfo = EpollEvent {
-            events: EPOLLIN | EPOLLOUT | EPOLLERR,
+            events: EPOLLIN | EPOLLERR | EPOLLET | EPOLLEXCLUSIVE | EPOLLWAKEUP,
             data: self.srvfd as u64,
         };
 
@@ -138,7 +136,6 @@ impl<H, P> Bind for Mux<H, P>
 
         let io_threads = self.io_threads;
         let epoll_config = self.epoll_config;
-        let cepfd = self.cepfd;
         let srvfd = self.srvfd;
         let protocol = self.protocol;
 
@@ -147,16 +144,9 @@ impl<H, P> Bind for Mux<H, P>
 
             let epfd = EpollFd::new(try!(epoll_create()));
 
-            let ceinfo = EpollEvent {
-                events: EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLEXCLUSIVE | EPOLLWAKEUP,
-                data: srvfd as u64,
-            };
-
             try!(epfd.register(srvfd, &ceinfo));
             trace!("registered thread's {} interest on {}", i, srvfd);
 
-
-            self.epfds.push(epfd);
 
             thread::spawn(move || {
                 trace!("spawned new thread {}", i);
@@ -173,8 +163,8 @@ impl<H, P> Bind for Mux<H, P>
 
         debug!("created {} I/O epoll instances", self.io_threads);
 
-        let mut epoll = Epoll::from_fd(cepfd,
-                                       protocol.get_handler(From::from(0_usize), cepfd, 0),
+        let mut epoll = Epoll::from_fd(self.cepfd,
+                                       protocol.get_handler(From::from(0_usize), self.cepfd, 0),
                                        epoll_config);
 
         info!("starting main event loop");

@@ -77,7 +77,7 @@ impl<L> Server<L>
         }));
 
         let siginfo = EpollEvent {
-            events: EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP | EPOLLERR,
+            events: EPOLLIN | EPOLLERR | EPOLLET,
             data: fd as u64,
         };
 

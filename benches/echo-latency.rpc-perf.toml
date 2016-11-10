@@ -3,7 +3,7 @@
 # use-case: analyze request/response latency
 
 [general]
-threads = 6
+threads = 4
 connections = 1000
 duration = 10
 windows = 5
