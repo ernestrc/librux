@@ -53,10 +53,8 @@ pub trait IOProtocol
 
 #[cfg(test)]
 mod tests {
-    use error::Result;
     use poll::*;
     use handler::Handler;
-    use RawFd;
     use super::*;
 
     #[derive(Clone, Copy)]
@@ -72,31 +70,36 @@ mod tests {
     }
 
     impl Handler<EpollEvent> for TestHandler {
-        fn on_error(&mut self) -> Result<()> {
-            self.on_error = true;
-            Ok(())
-        }
+        fn ready(&mut self, e: &EpollEvent) {
+            let kind = e.events;
 
-        fn on_close(&mut self) -> Result<()> {
-            self.on_close = true;
-            Ok(())
-        }
+            if kind.contains(EPOLLERR) {
+                self.on_error = true;
+            }
 
-        fn on_readable(&mut self) -> Result<()> {
-            self.on_readable = true;
-            Ok(())
-        }
+            if kind.contains(EPOLLIN) {
+                self.on_readable = true;
+            }
 
-        fn on_writable(&mut self) -> Result<()> {
-            self.on_writable = true;
-            Ok(())
+            if kind.contains(EPOLLOUT) {
+                self.on_writable = true;
+            }
+
+            if kind.contains(EPOLLHUP) {
+                self.on_close = true;
+            }
+        }
+        fn is_terminated(&self) -> bool {
+            false
         }
     }
 
     impl IOProtocol for TestIOProtocol {
         type Protocol = usize;
+    }
 
-        fn new(&self, _: usize, _: RawFd, _: EpollFd) -> Box<Handler> {
+    impl DynamicProtocol for TestIOProtocol {
+        fn get_handler(&self, _: Self::Protocol, _: EpollFd, _: usize) -> Box<Handler<EpollEvent>> {
             Box::new(TestHandler {
                 on_close: false,
                 on_error: false,

@@ -9,7 +9,6 @@ use handler::*;
 use poll::*;
 use super::logging::LoggingBackend;
 
-pub mod simplemux;
 pub mod mux;
 
 /// Server facade.
@@ -42,7 +41,7 @@ impl<L> Server<L>
         mask.add(SIGINT);
         mask.add(SIGTERM);
 
-        let loop_ms = im.get_loop_ms();
+        let econfig = im.get_epoll_config();
 
         thread::spawn(move || {
             try!(mask.thread_block());
@@ -57,7 +56,7 @@ impl<L> Server<L>
         let sigfd = try!(SignalFd::with_flags(&mask, SFD_NONBLOCK));
         let fd = sigfd.as_raw_fd();
 
-        let mut epoll = try!(Epoll::new_with(loop_ms, |epfd| {
+        let mut epoll = try!(Epoll::new_with(econfig, |epfd| {
 
             // delegate logging registering to logging backend
             let log = lb.setup(&epfd).unwrap();
@@ -130,7 +129,7 @@ pub trait Bind {
 
     fn stop(&mut self);
 
-    fn get_loop_ms(&self) -> isize;
+    fn get_epoll_config(&self) -> EpollConfig;
 
     fn bind(self, mask: SigSet) -> Result<()>;
 }

@@ -13,6 +13,8 @@ use protocol::StaticProtocol;
 use server::Bind;
 use handler::Handler;
 
+/// Server implementation that creates one AF_INET/SOCK_STREAM socket and uses it to bind/listen
+/// at the specified address. It will create one handler/epoll instance per `io_thread` plus one for the main thread.
 pub struct Mux<H, P>
     where H: Handler<EpollEvent>,
           P: StaticProtocol<H> + 'static
@@ -22,19 +24,18 @@ pub struct Mux<H, P>
     sockaddr: SockAddr,
     max_conn: usize,
     io_threads: usize,
-    loop_ms: isize,
-    next: usize,
+    epoll_config: EpollConfig,
     epfds: Vec<EpollFd>,
     terminated: bool,
     protocol: P,
-    _h: PhantomData<H>,
+    d: PhantomData<H>,
 }
 
 pub struct MuxConfig {
     max_conn: usize,
     io_threads: usize,
     sockaddr: SockAddr,
-    loop_ms: isize,
+    epoll_config: EpollConfig,
 }
 
 impl MuxConfig {
@@ -54,7 +55,7 @@ impl MuxConfig {
             sockaddr: sockaddr,
             max_conn: max_conn,
             io_threads: io_threads,
-            loop_ms: -1,
+            epoll_config: Default::default()
         })
     }
 
@@ -66,8 +67,8 @@ impl MuxConfig {
         MuxConfig { io_threads: io_threads, ..self }
     }
 
-    pub fn loop_ms(self, loop_ms: isize) -> MuxConfig {
-        MuxConfig { loop_ms: loop_ms, ..self }
+    pub fn epoll_config(self, epoll_config: EpollConfig) -> MuxConfig {
+        MuxConfig { epoll_config: epoll_config, ..self }
     }
 }
 
@@ -77,7 +78,7 @@ impl<H, P> Mux<H, P>
 {
     pub fn new(config: MuxConfig, protocol: P) -> Result<Mux<H, P>> {
 
-        let MuxConfig { io_threads, max_conn, sockaddr, loop_ms } = config;
+        let MuxConfig { io_threads, max_conn, sockaddr, epoll_config } = config;
 
         // create connections epoll
         let fd = try!(epoll_create());
@@ -96,20 +97,11 @@ impl<H, P> Mux<H, P>
             srvfd: srvfd,
             max_conn: max_conn,
             io_threads: io_threads,
-            next: io_threads,
-            loop_ms: loop_ms,
+            epoll_config: epoll_config,
             terminated: false,
             epfds: Vec::with_capacity(io_threads),
-            _h: PhantomData {},
+            d: PhantomData {},
         })
-    }
-
-    fn get_next(&mut self) -> usize {
-        if self.next == 0 {
-            self.next = self.io_threads;
-        }
-        self.next -= 1;
-        self.next
     }
 }
 
@@ -117,8 +109,8 @@ impl<H, P> Bind for Mux<H, P>
     where H: Handler<EpollEvent>,
           P: StaticProtocol<H>
 {
-    fn get_loop_ms(&self) -> isize {
-        self.loop_ms
+    fn get_epoll_config(&self) -> EpollConfig {
+        self.epoll_config
     }
 
     fn stop(&mut self) {
@@ -145,11 +137,12 @@ impl<H, P> Bind for Mux<H, P>
         trace!("registered main thread's interest on {}", self.srvfd);
 
         let io_threads = self.io_threads;
-        let loop_ms = self.loop_ms;
+        let epoll_config = self.epoll_config;
         let cepfd = self.cepfd;
         let srvfd = self.srvfd;
         let protocol = self.protocol;
 
+        // id 0 is for main thread's handler
         for i in 1..io_threads + 1 {
 
             let epfd = EpollFd::new(try!(epoll_create()));
@@ -171,7 +164,7 @@ impl<H, P> Bind for Mux<H, P>
                 mask.thread_block().unwrap();
                 let mut epoll = Epoll::from_fd(epfd,
                                                protocol.get_handler(From::from(0_usize), epfd, i),
-                                               loop_ms);
+                                               epoll_config);
 
                 info!("starting thread's {} event loop", i);
                 perror!("epoll.run()", epoll.run());
@@ -182,7 +175,7 @@ impl<H, P> Bind for Mux<H, P>
 
         let mut epoll = Epoll::from_fd(cepfd,
                                        protocol.get_handler(From::from(0_usize), cepfd, 0),
-                                       loop_ms);
+                                       epoll_config);
 
         info!("starting main event loop");
         epoll.run()

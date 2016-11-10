@@ -12,6 +12,10 @@ repository = "https://github.com/ernestrc/rux"
 name = "rux"
 path = "src/lib.rs"
 
+[[bench]]
+name = "buf"
+path = "benches/buf.rs"
+
 [dependencies]
 nix = { version = "0.7.0", features = ["signalfd"] }
 # TODO provide own macros

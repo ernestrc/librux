@@ -75,29 +75,24 @@ macro_rules! perror {
     }}
 }
 
-mod constants;
+pub mod constants;
+pub mod handler;
 pub mod protocol;
 pub mod poll;
 pub mod buf;
-pub mod handler;
 pub mod server;
 pub mod logging;
 pub mod error;
 
-use std::os::unix::io::{AsRawFd, RawFd};
-
-pub use poll::{Epoll, EpollFd, EpollEvent};
-pub use handler::Handler;
-pub use handler::sync::SyncHandler;
-pub use server::{Server, Bind};
-pub use logging::{LoggingBackend, SimpleLogging};
-pub use error::Result;
-pub use protocol::{IOProtocol, StaticProtocol, DynamicProtocol, Action};
+use std::os::unix::io::RawFd;
 
 pub use nix::unistd;
 pub use nix::fcntl;
 pub use nix::sys;
+
 pub use nix::unistd::close;
+
+use error::Result;
 
 pub fn write(fd: RawFd, buf: &[u8]) -> Result<Option<usize>> {
     let b = try!(eintr!(unistd::write, "unistd::write", fd, buf));
