@@ -7,6 +7,10 @@ extern crate time;
 #[macro_use] extern crate error_chain;
 #[macro_use] extern crate log;
 
+pub mod error;
+
+use error::*;
+
 #[macro_export]
 macro_rules! eintr {
     ($syscall:expr, $name:expr, $($arg:expr),*) => {{
@@ -17,12 +21,12 @@ macro_rules! eintr {
                     res = Ok(Some(m));
                     break;
                 },
-                Err(::nix::Error::Sys(::nix::errno::EAGAIN)) => {
+                Err(SysError(EAGAIN)) => {
                     trace!("{}: EAGAIN: socket not ready", $name);
                     res = Ok(None);
                     break;
                 },
-                Err(::nix::Error::Sys(::nix::errno::EINTR)) => {
+                Err(SysError(EINTR)) => {
                     debug!("{}: EINTR: re-submitting syscall", $name);
                     continue;
                 },
@@ -82,7 +86,6 @@ pub mod poll;
 pub mod buf;
 pub mod server;
 pub mod logging;
-pub mod error;
 
 use std::os::unix::io::RawFd;
 
@@ -91,8 +94,6 @@ pub use nix::fcntl;
 pub use nix::sys;
 
 pub use nix::unistd::close;
-
-use error::Result;
 
 pub fn write(fd: RawFd, buf: &[u8]) -> Result<Option<usize>> {
     let b = try!(eintr!(unistd::write, "unistd::write", fd, buf));

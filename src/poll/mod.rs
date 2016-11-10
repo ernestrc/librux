@@ -1,5 +1,5 @@
 use std::os::unix::io::RawFd;
-use std::{slice, fmt};
+use std::fmt;
 
 use nix::sys::epoll::{epoll_ctl, epoll_wait, EpollOp};
 use nix::unistd;

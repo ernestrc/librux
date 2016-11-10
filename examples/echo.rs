@@ -1,16 +1,21 @@
-#[macro_use] extern crate log;
-#[macro_use] extern crate rux;
+#[macro_use]
+extern crate log;
+#[macro_use]
+extern crate rux;
+extern crate slab;
 
 use std::os::unix::io::RawFd;
 
+use slab::Slab;
 use rux::{read, write, close};
 use rux::handler::*;
 use rux::server::Server;
 use rux::logging::SimpleLogging;
 use rux::protocol::*;
 use rux::poll::*;
+use rux::error::*;
+use rux::sys::socket::*;
 use rux::server::mux::*;
-
 use rux::buf::ByteBuffer;
 
 const BUF_CAP: usize = 1024 * 1024;
@@ -18,18 +23,20 @@ const BUF_CAP: usize = 1024 * 1024;
 /// Handler that echoes incoming bytes
 ///
 /// For benchmarking I/O throuput and latency
-pub struct EchoHandler<P: IOProtocol> {
+pub struct EchoHandler {
     sockw: bool,
-    eproto: P,
+    epfd: EpollFd,
+    connections: Slab<RawFd, usize>,
     buf: ByteBuffer,
 }
 
-impl <P: IOProtocol> EchoHandler<P> {
-    pub fn new(eproto: P) -> EchoHandler<P> {
+impl EchoHandler {
+    pub fn new(epfd: EpollFd) -> EchoHandler {
         trace!("new()");
         EchoHandler {
+            epfd: epfd,
             sockw: false,
-            eproto: eproto,
+            connections: Slab::with_capacity(10_000),
             buf: ByteBuffer::with_capacity(BUF_CAP),
         }
     }
@@ -70,25 +77,66 @@ impl <P: IOProtocol> EchoHandler<P> {
     }
 }
 
-impl <P: IOProtocol> Handler<EpollEvent> for EchoHandler<P> {
-
+impl Handler<EpollEvent> for EchoHandler {
     fn is_terminated(&self) -> bool {
         false
     }
 
     fn ready(&mut self, event: &EpollEvent) {
 
-        let fd = match self.eproto.decode(event.data) {
+        let fd = match EchoProtocol.decode(event.data) {
             Action::New(_, clifd) => clifd, 
             Action::Notify(_, clifd) => clifd,
-            Action::NoAction(data) => data as i32
+            Action::NoAction(data) => {
+                let srvfd = data as i32;
+                // only monitoring events from srvfd
+                match eintr!(accept4, "accept4", srvfd, SOCK_NONBLOCK) {
+                    Ok(Some(clifd)) => {
+
+                        trace!("accept4: accepted new tcp client {}", &clifd);
+
+                        debug!("assigned accepted client {}; epoll instance {}",
+                               &clifd,
+                               &self.epfd);
+
+                        match self.connections.vacant_entry() {
+                            Some(entry) => {
+
+                                let i = entry.index();
+                                entry.insert(clifd);
+
+                                let action = Action::Notify(i, clifd);
+                                let interest = EpollEvent {
+                                    events: EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP | EPOLLET,
+                                    data: EchoProtocol.encode(action),
+                                };
+
+                                match self.epfd.register(clifd, &interest) {
+                                    Ok(_) => {}
+                                    Err(e) => {
+                                        error!("closing: {:?}", e);
+                                        perror!("{}", close(clifd));
+                                    }
+                                };
+                                trace!("epoll_ctl: registered interests for {}", clifd);
+                            }
+                            None => error!("connection slab full"),
+                        }
+                    }
+                    Ok(None) => error!("accept4: socket not ready"),
+                    Err(e) => {
+                        error!("accept4: {}", e);
+                    }
+                };
+                return;
+            }
         };
 
         let kind = event.events;
 
         if kind.contains(EPOLLRDHUP) || kind.contains(EPOLLHUP) {
             trace!("socket's fd {}: EPOLLHUP", fd);
-            close(fd);
+            perror!("close: {}", close(fd));
             return;
         }
 
@@ -112,15 +160,13 @@ impl <P: IOProtocol> Handler<EpollEvent> for EchoHandler<P> {
 #[derive(Clone, Copy)]
 struct EchoProtocol;
 
-impl StaticProtocol<EchoHandler<EchoProtocol>> for EchoProtocol {
-
-    fn get_handler(&self, _: usize, _: EpollFd, _: usize) -> EchoHandler<EchoProtocol> {
-        EchoHandler::new(EchoProtocol)
+impl StaticProtocol<EchoHandler> for EchoProtocol {
+    fn get_handler(&self, _: usize, epfd: EpollFd, _: usize) -> EchoHandler {
+        EchoHandler::new(epfd)
     }
 }
 
 impl IOProtocol for EchoProtocol {
-
     type Protocol = usize;
 }
 

@@ -7,7 +7,7 @@ use nix::sys::socket::*;
 use nix::sys::signalfd::*;
 use nix::unistd;
 
-use error::{Error, Result};
+use error::*;
 use poll::*;
 use protocol::StaticProtocol;
 use server::Bind;
