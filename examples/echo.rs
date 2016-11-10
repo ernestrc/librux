@@ -2,11 +2,9 @@
 extern crate log;
 #[macro_use]
 extern crate rux;
-extern crate slab;
 
 use std::os::unix::io::RawFd;
 
-use slab::Slab;
 use rux::{read, write, close};
 use rux::handler::*;
 use rux::server::Server;
@@ -18,15 +16,16 @@ use rux::sys::socket::*;
 use rux::server::mux::*;
 use rux::buf::ByteBuffer;
 
-const BUF_CAP: usize = 1024 * 1024;
+const BUF_SIZE: usize = 1024 * 1024;
+const EPOLL_BUF_SIZE: usize = 10_000;
+const EPOLL_LOOP_MS: isize = -1;
+const IO_THREADS: usize = 4;
 
 /// Handler that echoes incoming bytes
 ///
 /// For benchmarking I/O throuput and latency
 pub struct EchoHandler {
-    sockw: bool,
     epfd: EpollFd,
-    connections: Slab<RawFd, usize>,
     buf: ByteBuffer,
 }
 
@@ -35,9 +34,7 @@ impl EchoHandler {
         trace!("new()");
         EchoHandler {
             epfd: epfd,
-            sockw: false,
-            connections: Slab::with_capacity(10_000),
-            buf: ByteBuffer::with_capacity(BUF_CAP),
+            buf: ByteBuffer::with_capacity(BUF_SIZE),
         }
     }
 
@@ -54,10 +51,6 @@ impl EchoHandler {
         } else {
             trace!("on_readable(): socket not ready");
         }
-
-        if self.sockw {
-            self.on_writable(fd)
-        }
     }
 
     fn on_writable(&mut self, fd: RawFd) {
@@ -70,9 +63,6 @@ impl EchoHandler {
             } else {
                 trace!("on_writable(): socket not ready");
             }
-        } else {
-            trace!("on_writable(): empty buf");
-            self.sockw = true;
         }
     }
 }
@@ -99,29 +89,21 @@ impl Handler<EpollEvent> for EchoHandler {
                                &clifd,
                                &self.epfd);
 
-                        match self.connections.vacant_entry() {
-                            Some(entry) => {
 
-                                let i = entry.index();
-                                entry.insert(clifd);
+                        let action = Action::Notify(0, clifd);
+                        let interest = EpollEvent {
+                            events: EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP | EPOLLET,
+                            data: EchoProtocol.encode(action),
+                        };
 
-                                let action = Action::Notify(i, clifd);
-                                let interest = EpollEvent {
-                                    events: EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP | EPOLLET,
-                                    data: EchoProtocol.encode(action),
-                                };
-
-                                match self.epfd.register(clifd, &interest) {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        error!("closing: {:?}", e);
-                                        perror!("{}", close(clifd));
-                                    }
-                                };
-                                trace!("epoll_ctl: registered interests for {}", clifd);
+                        match self.epfd.register(clifd, &interest) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                error!("register: {:?}", e);
+                                perror!("close: {}", close(clifd));
                             }
-                            None => error!("connection slab full"),
-                        }
+                        };
+                        trace!("epoll_ctl: registered interests for {}", clifd);
                     }
                     Ok(None) => error!("accept4: socket not ready"),
                     Err(e) => {
@@ -172,9 +154,13 @@ impl IOProtocol for EchoProtocol {
 
 fn main() {
 
-    let config = MuxConfig::new(("127.0.0.1", 10003))
+    let config = MuxConfig::new(("127.0.0.1", 10002))
         .unwrap()
-        .io_threads(6);
+        .io_threads(IO_THREADS)
+        .epoll_config(EpollConfig {
+            loop_ms: EPOLL_LOOP_MS,
+            buffer_size: EPOLL_BUF_SIZE,
+        });
 
     let logging = SimpleLogging::new(::log::LogLevel::Info);
 
