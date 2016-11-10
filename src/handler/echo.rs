@@ -53,7 +53,7 @@ impl <P: IOProtocol> EchoHandler<P> {
     fn on_writable(&mut self, fd: RawFd) -> Result<()> {
         trace!("on_writable()");
 
-        if !self.buf.is_empty() {
+        if self.buf.is_readable() {
             if let Some(cnt) = try!(write(fd, From::from(&self.buf))) {
                 trace!("on_writable() bytes {}", cnt);
                 self.buf.consume(cnt);
