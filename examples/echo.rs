@@ -1,19 +1,17 @@
-#[macro_use]
-extern crate log;
-#[macro_use]
-extern crate rux;
+#[macro_use] extern crate log;
+#[macro_use] extern crate rux;
 
 use std::os::unix::io::RawFd;
 
 use rux::{read, write, close};
 use rux::handler::*;
-use rux::server::Server;
+use rux::prop::Prop;
 use rux::logging::SimpleLogging;
 use rux::protocol::*;
 use rux::poll::*;
 use rux::error::*;
 use rux::sys::socket::*;
-use rux::server::mux::*;
+use rux::prop::mux::*;
 use rux::buf::ByteBuffer;
 
 const BUF_SIZE: usize = 1024 * 1024;
@@ -159,6 +157,5 @@ fn main() {
 
     let logging = SimpleLogging::new(::log::LogLevel::Info);
 
-    Server::bind(Mux::new(config, EchoProtocol).unwrap(), logging).unwrap();
-
+    Prop::create(Mux::new(config, EchoProtocol).unwrap(), logging).unwrap();
 }

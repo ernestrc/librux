@@ -11,28 +11,22 @@ use super::logging::LoggingBackend;
 
 pub mod mux;
 
-/// Server facade.
-/// TODO rename to something more generic, as it could perfectly be used
-/// to implement clients
-///
-/// Takes care of signals and logging, and delegates bind logic to `Bind`.
-pub struct Server<L: LoggingBackend> {
-    epfd: EpollFd,
+/// Takes care of signals and logging, and delegates 
+/// the rest to Server implementations.
+pub struct Prop<L: LoggingBackend> {
     sigfd: SignalFd,
-    // to speed up `ready()`
-    _sigfd: u64,
     lb: L,
     terminated: bool,
 }
 
-unsafe impl<L: LoggingBackend + Send> Send for Server<L> {}
+unsafe impl<L: LoggingBackend + Send> Send for Prop<L> {}
 
-impl<L> Server<L>
+impl<L> Prop<L>
     where L: LoggingBackend + Send
 {
-    /// Instantiates new Server with the given implementation
+    /// Instantiates new Prop with the given implementation
     /// and logging backend
-    pub fn bind<I: Bind + Send + 'static>(im: I, lb: L) -> Result<()> {
+    pub fn create<I: Server + Send + 'static>(im: I, lb: L) -> Result<()> {
 
         trace!("bind()");
 
@@ -67,10 +61,8 @@ impl<L> Server<L>
                 })
                 .unwrap();
 
-            Server {
-                epfd: epfd,
+            Prop {
                 sigfd: sigfd,
-                _sigfd: fd as u64,
                 lb: lb,
                 terminated: false,
             }
@@ -89,15 +81,14 @@ impl<L> Server<L>
     }
 }
 
-impl<L: LoggingBackend> Drop for Server<L> {
+impl<L: LoggingBackend> Drop for Prop<L> {
     fn drop(&mut self) {
         // signalfd is closed by the SignalFd struct
         // and epfd is closed by EpollFd
-        // so nothing to do here
     }
 }
 
-impl<L: LoggingBackend> Handler<EpollEvent> for Server<L> {
+impl<L: LoggingBackend> Handler<EpollEvent> for Prop<L> {
 
     fn is_terminated(&self) -> bool {
         self.terminated
@@ -105,7 +96,7 @@ impl<L: LoggingBackend> Handler<EpollEvent> for Server<L> {
 
     fn ready(&mut self, ev: &EpollEvent) {
         trace!("ready(): {:?}: {:?}", ev.data, ev.events);
-        if ev.data == self._sigfd {
+        if ev.data == self.sigfd.as_raw_fd() as u64 {
             match self.sigfd.read_signal() {
                 Ok(Some(sig)) => {
                     // stop server's event loop, as the signal mask
@@ -125,7 +116,7 @@ impl<L: LoggingBackend> Handler<EpollEvent> for Server<L> {
 }
 
 
-pub trait Bind {
+pub trait Server {
 
     fn stop(&mut self);
 

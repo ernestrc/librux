@@ -10,7 +10,7 @@ use nix::unistd;
 use error::*;
 use poll::*;
 use protocol::StaticProtocol;
-use server::Bind;
+use prop::Server;
 use handler::Handler;
 
 /// Server implementation that creates one AF_INET/SOCK_STREAM socket and uses it to bind/listen
@@ -44,8 +44,8 @@ impl MuxConfig {
 
         let cpus = ::num_cpus::get();
         let max_conn = 5000 * cpus;
-        let io_threads = if cpus > 3 {
-            cpus - 2 //1 for logging/signals + 1 main thread
+        let io_threads = if cpus > 2 {
+            cpus - 1 //1 for logging/signals
         } else {
             1
         };
@@ -63,6 +63,7 @@ impl MuxConfig {
     }
 
     pub fn io_threads(self, io_threads: usize) -> MuxConfig {
+        assert!(io_threads > 0, "I/O threads must be greater than 0");
         MuxConfig { io_threads: io_threads, ..self }
     }
 
@@ -103,7 +104,7 @@ impl<H, P> Mux<H, P>
     }
 }
 
-impl<H, P> Bind for Mux<H, P>
+impl<H, P> Server for Mux<H, P>
     where H: Handler<EpollEvent>,
           P: StaticProtocol<H>
 {
@@ -115,7 +116,7 @@ impl<H, P> Bind for Mux<H, P>
         self.terminated = true;
     }
 
-    fn bind(mut self, mask: SigSet) -> Result<()> {
+    fn bind(self, mask: SigSet) -> Result<()> {
         trace!("bind()");
 
         try!(eintr!(bind, "bind", self.srvfd, &self.sockaddr));
@@ -139,8 +140,7 @@ impl<H, P> Bind for Mux<H, P>
         let srvfd = self.srvfd;
         let protocol = self.protocol;
 
-        // id 0 is for main thread's handler
-        for i in 1..io_threads + 1 {
+        for i in 1..io_threads {
 
             let epfd = EpollFd::new(try!(epoll_create()));
 
@@ -161,12 +161,11 @@ impl<H, P> Bind for Mux<H, P>
             });
         }
 
-        debug!("created {} I/O epoll instances", self.io_threads);
-
         let mut epoll = Epoll::from_fd(self.cepfd,
                                        protocol.get_handler(From::from(0_usize), self.cepfd, 0),
                                        epoll_config);
 
+        debug!("created {} I/O epoll instances", self.io_threads);
         info!("starting main event loop");
         epoll.run()
     }

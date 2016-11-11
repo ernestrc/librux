@@ -79,12 +79,11 @@ macro_rules! perror {
     }}
 }
 
-pub mod constants;
 pub mod handler;
 pub mod protocol;
 pub mod poll;
 pub mod buf;
-pub mod server;
+pub mod prop;
 pub mod logging;
 
 use std::os::unix::io::RawFd;

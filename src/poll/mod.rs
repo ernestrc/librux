@@ -146,7 +146,6 @@ impl Default for EpollConfig {
 #[cfg(test)]
 mod tests {
     use handler::Handler;
-    use error::Result;
     use ::std::sync::mpsc::*;
     use nix::fcntl::O_NONBLOCK;
     use nix::unistd;

@@ -26,3 +26,6 @@ lazy_static = "0.2.1"
 error-chain = "*"
 time = "*"
 pad = "*"
+
+# [profile.release]
+# debug = true

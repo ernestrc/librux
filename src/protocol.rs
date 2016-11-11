@@ -4,23 +4,21 @@ use std::boxed::Box;
 use poll::{EpollFd, EpollEvent};
 use handler::Handler;
 
-pub type HandlerId = usize;
-
 pub enum Action<P: IOProtocol> {
     New(P::Protocol, RawFd),
-    Notify(HandlerId, RawFd),
+    Notify(usize, RawFd),
     NoAction(u64),
 }
 
 pub trait StaticProtocol<H: Handler<EpollEvent>>
     where Self: IOProtocol {
-    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd, id: usize) -> H;
+    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd, data: usize) -> H;
 }
 
 pub trait DynamicProtocol 
     where Self: IOProtocol {
 
-    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd, id: usize) -> Box<Handler<EpollEvent>>;
+    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd, data: usize) -> Box<Handler<EpollEvent>>;
 
 }
 
@@ -31,7 +29,7 @@ pub trait IOProtocol
 
     fn encode(&self, action: Action<Self>) -> u64 {
         match action {
-            Action::Notify(id, fd) => ((fd as u64) << 31) | ((id as u64) << 15) | 0,
+            Action::Notify(data, fd) => ((fd as u64) << 31) | ((data as u64) << 15) | 0,
             Action::New(protocol, fd) => {
                 let protocol: usize = protocol.into();
                 ((fd as u64) << 31) | ((protocol as u64) << 15) | 1
@@ -127,8 +125,8 @@ mod tests {
         let test = TestIOProtocol;
         let data = test.encode(Action::Notify(10110, 0));
 
-        if let Action::Notify(id, fd) = test.decode(data) {
-            assert!(id == 10110);
+        if let Action::Notify(data, fd) = test.decode(data) {
+            assert!(data == 10110);
             assert!(fd == 0);
         } else {
             panic!("action is not Action::Notify")
