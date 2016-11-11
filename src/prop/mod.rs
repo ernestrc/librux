@@ -77,7 +77,8 @@ impl<L> Prop<L>
         try!(epoll.epfd.register(fd, &siginfo));
 
         // run aux event loop
-        epoll.run()
+        epoll.run();
+        Ok(())
     }
 }
 

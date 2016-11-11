@@ -157,7 +157,7 @@ impl<H, P> Server for Mux<H, P>
                                                epoll_config);
 
                 info!("starting thread's {} event loop", i);
-                perror!("epoll.run()", epoll.run());
+                epoll.run();
             });
         }
 
@@ -167,7 +167,8 @@ impl<H, P> Server for Mux<H, P>
 
         debug!("created {} I/O epoll instances", self.io_threads);
         info!("starting main event loop");
-        epoll.run()
+        epoll.run();
+        Ok(())
     }
 }
 

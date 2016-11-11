@@ -15,7 +15,7 @@ use rux::prop::mux::*;
 use rux::buf::ByteBuffer;
 
 const BUF_SIZE: usize = 1024 * 1024;
-const EPOLL_BUF_SIZE: usize = 10_000;
+const EPOLL_BUF_SIZE: usize = 1000;
 const EPOLL_LOOP_MS: isize = -1;
 
 /// Handler that echoes incoming bytes
@@ -153,6 +153,7 @@ fn main() {
 
     let config = MuxConfig::new(("127.0.0.1", 10002))
         .unwrap()
+        .io_threads(1)
         .epoll_config(EpollConfig { loop_ms: EPOLL_LOOP_MS, buffer_size: EPOLL_BUF_SIZE });
 
     let logging = SimpleLogging::new(::log::LogLevel::Info);

@@ -15,7 +15,7 @@ ipv6 = true
 [[workload]]
 name = "echo"
 method = "echo"
-rate = 1000
+rate = 50000
 
 [[workload.parameter]]
 style = "static"

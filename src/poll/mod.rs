@@ -4,7 +4,7 @@ use std::fmt;
 use nix::sys::epoll::{epoll_ctl, epoll_wait, EpollOp};
 use nix::unistd;
 
-use error::{Result, Error};
+use error::Result;
 use handler::Handler;
 
 pub use nix::sys::epoll::{epoll_create, EpollEvent, EpollEventKind, EPOLLIN, EPOLLOUT, EPOLLERR,
@@ -61,27 +61,21 @@ impl <H: Handler<EpollEvent>> Epoll<H> {
     }
 
     #[inline]
-    fn run_once(&mut self) -> Result<()> {
+    fn run_once(&mut self) {
 
         let dst = unsafe { ::std::slice::from_raw_parts_mut(self.buf.as_mut_ptr(), self.buf.capacity()) };
-        let cnt = try!(epoll_wait(self.epfd.fd, dst, self.loop_ms));
+        let cnt = epoll_wait(self.epfd.fd, dst, self.loop_ms).unwrap();
         unsafe { self.buf.set_len(cnt) }
-        trace!("run_once(): {} new events", cnt);
 
         for ev in self.buf.iter() {
             self.handler.ready(&ev);
         }
-        Ok(())
     }
 
-    pub fn run(&mut self) -> Result<()> {
-        trace!("run()");
-
+    pub fn run(&mut self) {
         while !self.handler.is_terminated() {
-            perror!("loop()", self.run_once());
+            self.run_once();
         }
-
-        Ok(())
     }
 }
 
