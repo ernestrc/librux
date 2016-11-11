@@ -27,5 +27,5 @@ error-chain = "*"
 time = "*"
 pad = "*"
 
-# [profile.release]
-# debug = true
+[profile.release]
+debug = true

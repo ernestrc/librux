@@ -91,6 +91,7 @@ use std::os::unix::io::RawFd;
 pub use nix::unistd;
 pub use nix::fcntl;
 pub use nix::sys;
+pub use nix::sched;
 
 pub use nix::unistd::close;
 

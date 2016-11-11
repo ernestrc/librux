@@ -19,6 +19,8 @@ pub struct Prop<L: LoggingBackend> {
     terminated: bool,
 }
 
+// TODO should take SignalHandler
+// TODO provide config to tune sched_setaffinity
 unsafe impl<L: LoggingBackend + Send> Send for Prop<L> {}
 
 impl<L> Prop<L>

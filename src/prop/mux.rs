@@ -6,6 +6,7 @@ use std::marker::PhantomData;
 use nix::sys::socket::*;
 use nix::sys::signalfd::*;
 use nix::unistd;
+use nix::sched;
 
 use error::*;
 use poll::*;
@@ -156,7 +157,15 @@ impl<H, P> Server for Mux<H, P>
                                                protocol.get_handler(From::from(0_usize), epfd, i),
                                                epoll_config);
 
-                info!("starting thread's {} event loop", i);
+                let aff = i % ::num_cpus::get();
+                let mut cpuset = sched::CpuSet::new();
+                cpuset.set(aff).unwrap();
+
+                sched::sched_setaffinity(0, &cpuset).unwrap();
+
+                debug!("set thread's {} affinity to cpu {}", i, aff);
+
+                info!("starting I/O thread's {} event loop", i);
                 epoll.run();
             });
         }
@@ -166,7 +175,16 @@ impl<H, P> Server for Mux<H, P>
                                        epoll_config);
 
         debug!("created {} I/O epoll instances", self.io_threads);
-        info!("starting main event loop");
+        info!("starting I/O thread's 0 event loop");
+
+        let aff = 0;
+        let mut cpuset = sched::CpuSet::new();
+        cpuset.set(aff).unwrap();
+
+        sched::sched_setaffinity(0, &cpuset).unwrap();
+
+        debug!("set thread's 0 affinity to cpu {}", aff);
+
         epoll.run();
         Ok(())
     }

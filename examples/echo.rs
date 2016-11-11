@@ -15,7 +15,7 @@ use rux::prop::mux::*;
 use rux::buf::ByteBuffer;
 
 const BUF_SIZE: usize = 1024 * 1024;
-const EPOLL_BUF_SIZE: usize = 1000;
+const EPOLL_BUF_SIZE: usize = 100;
 const EPOLL_LOOP_MS: isize = -1;
 
 /// Handler that echoes incoming bytes
@@ -80,12 +80,7 @@ impl Handler<EpollEvent> for EchoHandler {
                 match eintr!(accept4, "accept4", srvfd, SOCK_NONBLOCK) {
                     Ok(Some(clifd)) => {
 
-                        trace!("accept4: accepted new tcp client {}", &clifd);
-
-                        debug!("assigned accepted client {}; epoll instance {}",
-                               &clifd,
-                               &self.epfd);
-
+                        trace!("accept4: accepted new tcp client {} in epoll instance {}", &clifd, &self.epfd);
 
                         let action = Action::Notify(0, clifd);
                         let interest = EpollEvent {
@@ -153,10 +148,10 @@ fn main() {
 
     let config = MuxConfig::new(("127.0.0.1", 10002))
         .unwrap()
-        .io_threads(1)
+        .io_threads(4)
         .epoll_config(EpollConfig { loop_ms: EPOLL_LOOP_MS, buffer_size: EPOLL_BUF_SIZE });
 
-    let logging = SimpleLogging::new(::log::LogLevel::Info);
+    let logging = SimpleLogging::new(::log::LogLevel::Debug);
 
     Prop::create(Mux::new(config, EchoProtocol).unwrap(), logging).unwrap();
 }
