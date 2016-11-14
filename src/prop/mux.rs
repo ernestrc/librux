@@ -129,7 +129,7 @@ impl<H, P> Server for Mux<H, P>
               self.max_conn);
 
         let ceinfo = EpollEvent {
-            events: EPOLLIN | EPOLLERR | EPOLLET | EPOLLEXCLUSIVE | EPOLLWAKEUP,
+            events: EPOLLIN | EPOLLET | EPOLLEXCLUSIVE | EPOLLWAKEUP,
             data: self.srvfd as u64,
         };
 

@@ -11,7 +11,7 @@ use super::logging::LoggingBackend;
 
 pub mod mux;
 
-/// Takes care of signals and logging, and delegates 
+/// Takes care of signals and logging, and delegates
 /// the rest to Server implementations.
 pub struct Prop<L: LoggingBackend> {
     sigfd: SignalFd,
@@ -71,7 +71,7 @@ impl<L> Prop<L>
         }));
 
         let siginfo = EpollEvent {
-            events: EPOLLIN | EPOLLERR | EPOLLET,
+            events: EPOLLIN | EPOLLET,
             data: fd as u64,
         };
 
@@ -92,7 +92,6 @@ impl<L: LoggingBackend> Drop for Prop<L> {
 }
 
 impl<L: LoggingBackend> Handler<EpollEvent> for Prop<L> {
-
     fn is_terminated(&self) -> bool {
         self.terminated
     }
@@ -120,7 +119,6 @@ impl<L: LoggingBackend> Handler<EpollEvent> for Prop<L> {
 
 
 pub trait Server {
-
     fn stop(&mut self);
 
     fn get_epoll_config(&self) -> EpollConfig;

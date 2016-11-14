@@ -22,7 +22,7 @@ lazy_static! {
 #[derive(Debug, Copy, Clone)]
 pub struct EpollConfig {
     pub loop_ms: isize,
-    pub buffer_size: usize
+    pub buffer_size: usize,
 }
 
 pub struct Epoll<H: Handler<EpollEvent>> {
@@ -37,7 +37,7 @@ pub struct EpollFd {
     pub fd: RawFd,
 }
 
-impl <H: Handler<EpollEvent>> Epoll<H> {
+impl<H: Handler<EpollEvent>> Epoll<H> {
     pub fn from_fd(epfd: EpollFd, handler: H, config: EpollConfig) -> Epoll<H> {
         Epoll {
             epfd: epfd,
@@ -63,7 +63,8 @@ impl <H: Handler<EpollEvent>> Epoll<H> {
     #[inline]
     fn run_once(&mut self) {
 
-        let dst = unsafe { ::std::slice::from_raw_parts_mut(self.buf.as_mut_ptr(), self.buf.capacity()) };
+        let dst =
+            unsafe { ::std::slice::from_raw_parts_mut(self.buf.as_mut_ptr(), self.buf.capacity()) };
         let cnt = epoll_wait(self.epfd.fd, dst, self.loop_ms).unwrap();
         unsafe { self.buf.set_len(cnt) }
 
@@ -79,7 +80,7 @@ impl <H: Handler<EpollEvent>> Epoll<H> {
     }
 }
 
-impl <H: Handler<EpollEvent>> Drop for Epoll<H> {
+impl<H: Handler<EpollEvent>> Drop for Epoll<H> {
     fn drop(&mut self) {
         let _ = unistd::close(self.epfd.fd);
     }
@@ -133,7 +134,12 @@ impl From<EpollFd> for i32 {
 }
 
 impl Default for EpollConfig {
-    fn default() -> EpollConfig { EpollConfig { loop_ms: -1,  buffer_size: 10_000 }}
+    fn default() -> EpollConfig {
+        EpollConfig {
+            loop_ms: -1,
+            buffer_size: 100,
+        }
+    }
 }
 
 
@@ -165,7 +171,7 @@ mod tests {
 
         let config = EpollConfig {
             loop_ms: 10,
-            buffer_size: 100
+            buffer_size: 100,
         };
 
         let mut poll = Epoll::new_with(config, |_| ChannelHandler { tx: tx }).unwrap();

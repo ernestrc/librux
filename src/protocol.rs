@@ -11,15 +11,19 @@ pub enum Action<P: IOProtocol> {
 }
 
 pub trait StaticProtocol<H: Handler<EpollEvent>>
-    where Self: IOProtocol {
+    where Self: IOProtocol
+{
     fn get_handler(&self, p: Self::Protocol, epfd: EpollFd, data: usize) -> H;
 }
 
-pub trait DynamicProtocol 
-    where Self: IOProtocol {
-
-    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd, data: usize) -> Box<Handler<EpollEvent>>;
-
+pub trait DynamicProtocol
+    where Self: IOProtocol
+{
+    fn get_handler(&self,
+                   p: Self::Protocol,
+                   epfd: EpollFd,
+                   data: usize)
+                   -> Box<Handler<EpollEvent>>;
 }
 
 pub trait IOProtocol

@@ -3,7 +3,7 @@
 
 use std::os::unix::io::RawFd;
 
-use rux::{read, write, close};
+use rux::{read, send as rsend, close};
 use rux::handler::*;
 use rux::prop::Prop;
 use rux::logging::SimpleLogging;
@@ -54,7 +54,7 @@ impl EchoHandler {
         trace!("on_writable()");
 
         if self.buf.is_readable() {
-            if let Some(cnt) = write(fd, From::from(&self.buf)).unwrap() {
+            if let Some(cnt) = rsend(fd, From::from(&self.buf), MSG_DONTWAIT).unwrap() {
                 trace!("on_writable() bytes {}", cnt);
                 self.buf.consume(cnt);
             } else {
@@ -77,14 +77,14 @@ impl Handler<EpollEvent> for EchoHandler {
             Action::NoAction(data) => {
                 let srvfd = data as i32;
                 // only monitoring events from srvfd
-                match eintr!(accept4, "accept4", srvfd, SOCK_NONBLOCK) {
+                match eintr!(accept4, "accept4", srvfd, SockFlag::empty()) {
                     Ok(Some(clifd)) => {
 
                         trace!("accept4: accepted new tcp client {} in epoll instance {}", &clifd, &self.epfd);
 
                         let action = Action::Notify(0, clifd);
                         let interest = EpollEvent {
-                            events: EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLRDHUP | EPOLLET,
+                            events: EPOLLIN | EPOLLOUT | EPOLLET,
                             data: EchoProtocol.encode(action),
                         };
 
@@ -108,7 +108,7 @@ impl Handler<EpollEvent> for EchoHandler {
 
         let kind = event.events;
 
-        if kind.contains(EPOLLRDHUP) || kind.contains(EPOLLHUP) {
+        if kind.contains(EPOLLHUP) {
             trace!("socket's fd {}: EPOLLHUP", fd);
             perror!("close: {}", close(fd));
             return;
@@ -148,7 +148,7 @@ fn main() {
 
     let config = MuxConfig::new(("127.0.0.1", 10002))
         .unwrap()
-        .io_threads(4)
+        .io_threads(1)
         .epoll_config(EpollConfig { loop_ms: EPOLL_LOOP_MS, buffer_size: EPOLL_BUF_SIZE });
 
     let logging = SimpleLogging::new(::log::LogLevel::Debug);
