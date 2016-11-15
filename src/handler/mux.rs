@@ -96,7 +96,7 @@ impl<H: Handler<MuxEvent>, P: StaticProtocol<MuxEvent, H>> SSyncMux<H, P> {
             Action::Notify(i, fd) => Ok(Some((i, fd))),
             Action::NoAction(data) => {
                 let srvfd = data as i32;
-                match eintr!(accept4, "accept4", srvfd, SOCK_NONBLOCK) {
+                match eintr!(accept4, "accept4", srvfd, SockFlag::empty()) {
                     Ok(Some(clifd)) => {
                         trace!("accept4: accepted new tcp client {}", &clifd);
                         Self::new_handler(protocol, From::from(1_usize), clifd, epfd, handlers)?;
