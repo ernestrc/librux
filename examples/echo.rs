@@ -11,9 +11,8 @@ use rux::protocol::*;
 use rux::poll::*;
 use rux::error::*;
 use rux::sys::socket::*;
-use rux::prop::mux::*;
-use rux::buf::ByteBuffer;
-use rux::handler::sync::{SyncMux, MuxEvent};
+use rux::prop::server::*;
+use rux::handler::mux::{SSyncMux, MuxEvent};
 
 const BUF_SIZE: usize = 1024;
 const MAX_CONN: usize = 24 * 1024;
@@ -84,9 +83,9 @@ impl StaticProtocol<MuxEvent, EchoHandler> for EchoProtocol {
     }
 }
 
-impl StaticProtocol<EpollEvent, SyncMux<EchoHandler, EchoProtocol>> for EchoProtocol {
-    fn get_handler(&self, _: usize, epfd: EpollFd, _: usize) -> SyncMux<EchoHandler, EchoProtocol> {
-        SyncMux::new(BUF_SIZE, MAX_CONN, epfd, EchoProtocol)
+impl StaticProtocol<EpollEvent, SSyncMux<EchoHandler, EchoProtocol>> for EchoProtocol {
+    fn get_handler(&self, _: usize, epfd: EpollFd, _: usize) -> SSyncMux<EchoHandler, EchoProtocol> {
+        SSyncMux::new(BUF_SIZE, MAX_CONN, epfd, EchoProtocol)
     }
 }
 
@@ -96,7 +95,7 @@ impl MuxProtocol for EchoProtocol {
 
 fn main() {
 
-    let config = MuxConfig::new(("127.0.0.1", 10002))
+    let config = ServerConfig::new(("127.0.0.1", 10002))
         .unwrap()
         .io_threads(1)
         .epoll_config(EpollConfig {
@@ -106,5 +105,5 @@ fn main() {
 
     let logging = SimpleLogging::new(::log::LogLevel::Debug);
 
-    Prop::create(Mux::new(config, EchoProtocol).unwrap(), logging).unwrap();
+    Prop::create(Server::new(config, EchoProtocol).unwrap(), logging).unwrap();
 }

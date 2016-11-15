@@ -7,6 +7,7 @@ use poll::*;
 
 /// TODO: provide debug/warn/info/... macro implementations with thread_local!
 /// Logging Handler
+/// TODO: use pipes as mpsc and then splice into file
 pub trait LoggingBackend
     where Self: Handler<EpollEvent> + 'static
 {

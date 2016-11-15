@@ -9,10 +9,10 @@ use handler::*;
 use poll::*;
 use super::logging::LoggingBackend;
 
-pub mod mux;
+pub mod server;
 
 /// Takes care of signals and logging, and delegates
-/// the rest to Server implementations.
+/// the rest to Run implementations.
 pub struct Prop<L: LoggingBackend> {
     sigfd: SignalFd,
     lb: L,
@@ -28,7 +28,7 @@ impl<L> Prop<L>
 {
     /// Instantiates new Prop with the given implementation
     /// and logging backend
-    pub fn create<I: Server + Send + 'static>(im: I, lb: L) -> Result<()> {
+    pub fn create<I: Run + Send + 'static>(im: I, lb: L) -> Result<()> {
 
         trace!("bind()");
 
@@ -42,7 +42,7 @@ impl<L> Prop<L>
         thread::spawn(move || {
             try!(mask.thread_block());
             // run impl's I/O event loop(s)
-            im.bind(mask)
+            im.run(mask)
         });
 
         // add the set of signals to the signal mask
@@ -118,10 +118,10 @@ impl<L: LoggingBackend> Handler<EpollEvent> for Prop<L> {
 }
 
 
-pub trait Server {
+pub trait Run {
     fn stop(&mut self);
 
     fn get_epoll_config(&self) -> EpollConfig;
 
-    fn bind(self, mask: SigSet) -> Result<()>;
+    fn run(self, mask: SigSet) -> Result<()>;
 }

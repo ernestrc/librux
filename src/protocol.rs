@@ -1,7 +1,7 @@
 use std::os::unix::io::RawFd;
 use std::boxed::Box;
 
-use poll::{EpollFd, EpollEvent};
+use poll::EpollFd;
 use handler::Handler;
 
 pub enum Action<P: MuxProtocol> {
@@ -20,11 +20,7 @@ pub trait StaticProtocol<E, H: Handler<E>>
 pub trait DynamicProtocol<E>
     where Self: MuxProtocol
 {
-    fn get_handler(&self,
-                   p: Self::Protocol,
-                   epfd: EpollFd,
-                   data: usize)
-                   -> Box<Handler<E>>;
+    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd, data: usize) -> Box<Handler<E>>;
 }
 
 pub trait MuxProtocol

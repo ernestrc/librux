@@ -11,12 +11,12 @@ use nix::sched;
 use error::*;
 use poll::*;
 use protocol::StaticProtocol;
-use prop::Server;
+use prop::Run;
 use handler::Handler;
 
 /// Server implementation that creates one AF_INET/SOCK_STREAM socket and uses it to bind/listen
 /// at the specified address. It will create one handler/epoll instance per `io_thread` plus one for the main thread.
-pub struct Mux<H, P>
+pub struct Server<H, P>
     where H: Handler<EpollEvent>,
           P: StaticProtocol<EpollEvent, H> + 'static
 {
@@ -31,15 +31,15 @@ pub struct Mux<H, P>
     d: PhantomData<H>,
 }
 
-pub struct MuxConfig {
+pub struct ServerConfig {
     max_conn: usize,
     io_threads: usize,
     sockaddr: SockAddr,
     epoll_config: EpollConfig,
 }
 
-impl MuxConfig {
-    pub fn new<A: ToSocketAddrs>(addr: A) -> Result<MuxConfig> {
+impl ServerConfig {
+    pub fn new<A: ToSocketAddrs>(addr: A) -> Result<ServerConfig> {
         let inet = try!(addr.to_socket_addrs().unwrap().next().ok_or("could not parse sockaddr"));
         let sockaddr = SockAddr::Inet(InetAddr::from_std(&inet));
 
@@ -51,7 +51,7 @@ impl MuxConfig {
             1
         };
 
-        Ok(MuxConfig {
+        Ok(ServerConfig {
             sockaddr: sockaddr,
             max_conn: max_conn,
             io_threads: io_threads,
@@ -59,27 +59,27 @@ impl MuxConfig {
         })
     }
 
-    pub fn max_conn(self, max_conn: usize) -> MuxConfig {
-        MuxConfig { max_conn: max_conn, ..self }
+    pub fn max_conn(self, max_conn: usize) -> ServerConfig {
+        ServerConfig { max_conn: max_conn, ..self }
     }
 
-    pub fn io_threads(self, io_threads: usize) -> MuxConfig {
+    pub fn io_threads(self, io_threads: usize) -> ServerConfig {
         assert!(io_threads > 0, "I/O threads must be greater than 0");
-        MuxConfig { io_threads: io_threads, ..self }
+        ServerConfig { io_threads: io_threads, ..self }
     }
 
-    pub fn epoll_config(self, epoll_config: EpollConfig) -> MuxConfig {
-        MuxConfig { epoll_config: epoll_config, ..self }
+    pub fn epoll_config(self, epoll_config: EpollConfig) -> ServerConfig {
+        ServerConfig { epoll_config: epoll_config, ..self }
     }
 }
 
-impl<H, P> Mux<H, P>
+impl<H, P> Server<H, P>
     where H: Handler<EpollEvent>,
           P: StaticProtocol<EpollEvent, H>
 {
-    pub fn new(config: MuxConfig, protocol: P) -> Result<Mux<H, P>> {
+    pub fn new(config: ServerConfig, protocol: P) -> Result<Server<H, P>> {
 
-        let MuxConfig { io_threads, max_conn, sockaddr, epoll_config } = config;
+        let ServerConfig { io_threads, max_conn, sockaddr, epoll_config } = config;
 
         // create connections epoll
         let fd = try!(epoll_create());
@@ -91,7 +91,7 @@ impl<H, P> Mux<H, P>
 
         setsockopt(srvfd, sockopt::ReuseAddr, &true).unwrap();
 
-        Ok(Mux {
+        Ok(Server {
             sockaddr: sockaddr,
             cepfd: cepfd,
             protocol: protocol,
@@ -105,7 +105,7 @@ impl<H, P> Mux<H, P>
     }
 }
 
-impl<H, P> Server for Mux<H, P>
+impl<H, P> Run for Server<H, P>
     where H: Handler<EpollEvent>,
           P: StaticProtocol<EpollEvent, H>
 {
@@ -117,7 +117,7 @@ impl<H, P> Server for Mux<H, P>
         self.terminated = true;
     }
 
-    fn bind(self, mask: SigSet) -> Result<()> {
+    fn run(self, mask: SigSet) -> Result<()> {
         trace!("bind()");
 
         try!(eintr!(bind, "bind", self.srvfd, &self.sockaddr));
@@ -191,7 +191,7 @@ impl<H, P> Server for Mux<H, P>
 }
 
 
-impl<H, P> Drop for Mux<H, P>
+impl<H, P> Drop for Server<H, P>
     where H: Handler<EpollEvent>,
           P: StaticProtocol<EpollEvent, H>
 {

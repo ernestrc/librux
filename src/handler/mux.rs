@@ -10,14 +10,6 @@ use error::*;
 use poll::*;
 use protocol::*;
 
-pub struct SyncMux<H: Handler<MuxEvent>, P: StaticProtocol<MuxEvent, H>> {
-    epfd: EpollFd,
-    buffers: Vec<ByteBuffer>,
-    handlers: Slab<H, usize>,
-    protocol: P,
-    is_terminated: bool,
-}
-
 pub struct MuxEvent {
     pub kind: EpollEventKind,
     pub fd: RawFd,
@@ -31,13 +23,21 @@ impl MuxEvent {
     }
 }
 
-impl<H: Handler<MuxEvent>, P: StaticProtocol<MuxEvent, H>> SyncMux<H, P> {
+pub struct SSyncMux<H: Handler<MuxEvent>, P: StaticProtocol<MuxEvent, H>> {
+    epfd: EpollFd,
+    buffers: Vec<ByteBuffer>,
+    handlers: Slab<H, usize>,
+    protocol: P,
+    is_terminated: bool,
+}
+
+impl<H: Handler<MuxEvent>, P: StaticProtocol<MuxEvent, H>> SSyncMux<H, P> {
     pub fn new(buffer_size: usize,
                max_handlers: usize,
                epfd: EpollFd,
                protocol: P)
-               -> SyncMux<H, P> {
-        SyncMux {
+               -> SSyncMux<H, P> {
+        SSyncMux {
             epfd: epfd,
             buffers: vec!(ByteBuffer::with_capacity(buffer_size); max_handlers),
             handlers: Slab::with_capacity(max_handlers),
@@ -92,7 +92,7 @@ impl<H: Handler<MuxEvent>, P: StaticProtocol<MuxEvent, H>> SyncMux<H, P> {
             Action::New(proto, clifd) => {
                 let (idx, fd) = Self::new_handler(protocol, proto, clifd, epfd, handlers)?;
                 Ok(Some((idx, fd)))
-            },
+            }
             Action::Notify(i, fd) => Ok(Some((i, fd))),
             Action::NoAction(data) => {
                 let srvfd = data as i32;
@@ -110,7 +110,7 @@ impl<H: Handler<MuxEvent>, P: StaticProtocol<MuxEvent, H>> SyncMux<H, P> {
     }
 }
 
-impl<H, P> Handler<EpollEvent> for SyncMux<H, P>
+impl<H, P> Handler<EpollEvent> for SSyncMux<H, P>
     where H: Handler<MuxEvent>,
           P: StaticProtocol<MuxEvent, H>
 {
@@ -121,7 +121,7 @@ impl<H, P> Handler<EpollEvent> for SyncMux<H, P>
     fn ready(&mut self, event: &EpollEvent) {
 
         let (idx, fd) =
-            match SyncMux::decode(&self.protocol, &self.epfd, event, &mut self.handlers) {
+            match SSyncMux::decode(&self.protocol, &self.epfd, event, &mut self.handlers) {
                 Ok(Some((idx, fd))) => (idx, fd),
                 Ok(None) => {
                     // new connection
