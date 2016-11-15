@@ -4,29 +4,30 @@ use std::boxed::Box;
 use poll::{EpollFd, EpollEvent};
 use handler::Handler;
 
-pub enum Action<P: IOProtocol> {
+pub enum Action<P: MuxProtocol> {
     New(P::Protocol, RawFd),
     Notify(usize, RawFd),
     NoAction(u64),
 }
 
-pub trait StaticProtocol<H: Handler<EpollEvent>>
-    where Self: IOProtocol
+/// Multiplexer Protocol
+pub trait StaticProtocol<E, H: Handler<E>>
+    where Self: MuxProtocol
 {
     fn get_handler(&self, p: Self::Protocol, epfd: EpollFd, data: usize) -> H;
 }
 
-pub trait DynamicProtocol
-    where Self: IOProtocol
+pub trait DynamicProtocol<E>
+    where Self: MuxProtocol
 {
     fn get_handler(&self,
                    p: Self::Protocol,
                    epfd: EpollFd,
                    data: usize)
-                   -> Box<Handler<EpollEvent>>;
+                   -> Box<Handler<E>>;
 }
 
-pub trait IOProtocol
+pub trait MuxProtocol
     where Self: Sized + Send + Copy
 {
     type Protocol: From<usize> + Into<usize> + Copy;
@@ -60,7 +61,7 @@ mod tests {
     use super::*;
 
     #[derive(Clone, Copy)]
-    struct TestIOProtocol;
+    struct TestMuxProtocol;
 
     const PROTO1: usize = 1;
 
@@ -96,11 +97,11 @@ mod tests {
         }
     }
 
-    impl IOProtocol for TestIOProtocol {
+    impl MuxProtocol for TestMuxProtocol {
         type Protocol = usize;
     }
 
-    impl DynamicProtocol for TestIOProtocol {
+    impl DynamicProtocol for TestMuxProtocol {
         fn get_handler(&self, _: Self::Protocol, _: EpollFd, _: usize) -> Box<Handler<EpollEvent>> {
             Box::new(TestHandler {
                 on_close: false,
@@ -113,7 +114,7 @@ mod tests {
 
     #[test]
     fn decode_encode_new_action() {
-        let test = TestIOProtocol;
+        let test = TestMuxProtocol;
         let data = test.encode(Action::New(PROTO1, ::std::i32::MAX));
 
         if let Action::New(protocol, fd) = test.decode(data) {
@@ -126,7 +127,7 @@ mod tests {
 
     #[test]
     fn decode_encode_notify_action() {
-        let test = TestIOProtocol;
+        let test = TestMuxProtocol;
         let data = test.encode(Action::Notify(10110, 0));
 
         if let Action::Notify(data, fd) = test.decode(data) {

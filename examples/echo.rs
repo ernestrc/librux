@@ -1,7 +1,7 @@
-#[macro_use] extern crate log;
-#[macro_use] extern crate rux;
-
-use std::os::unix::io::RawFd;
+#[macro_use]
+extern crate log;
+#[macro_use]
+extern crate rux;
 
 use rux::{read, send as rsend, close};
 use rux::handler::*;
@@ -13,8 +13,10 @@ use rux::error::*;
 use rux::sys::socket::*;
 use rux::prop::mux::*;
 use rux::buf::ByteBuffer;
+use rux::handler::sync::{SyncMux, MuxEvent};
 
-const BUF_SIZE: usize = 1024 * 1024;
+const BUF_SIZE: usize = 1024;
+const MAX_CONN: usize = 24 * 1024;
 const EPOLL_BUF_SIZE: usize = 100;
 const EPOLL_LOOP_MS: isize = -1;
 
@@ -22,111 +24,51 @@ const EPOLL_LOOP_MS: isize = -1;
 ///
 /// For benchmarking I/O throuput and latency
 pub struct EchoHandler {
-    epfd: EpollFd,
-    buf: ByteBuffer,
+    terminated: bool
 }
 
-impl EchoHandler {
-    pub fn new(epfd: EpollFd) -> EchoHandler {
-        trace!("new()");
-        EchoHandler {
-            epfd: epfd,
-            buf: ByteBuffer::with_capacity(BUF_SIZE),
-        }
-    }
-
-    fn on_error(&mut self, fd: RawFd) {
-        error!("EPOLLERR: {:?}", fd);
-    }
-
-    fn on_readable(&mut self, fd: RawFd) {
-        trace!("on_readable()");
-
-        if let Some(n) = read(fd, From::from(&mut self.buf)).unwrap() {
-            trace!("on_readable(): {:?} bytes", n);
-            self.buf.extend(n);
-        } else {
-            trace!("on_readable(): socket not ready");
-        }
-    }
-
-    fn on_writable(&mut self, fd: RawFd) {
-        trace!("on_writable()");
-
-        if self.buf.is_readable() {
-            if let Some(cnt) = rsend(fd, From::from(&self.buf), MSG_DONTWAIT).unwrap() {
-                trace!("on_writable() bytes {}", cnt);
-                self.buf.consume(cnt);
-            } else {
-                trace!("on_writable(): socket not ready");
-            }
-        }
-    }
-}
-
-impl Handler<EpollEvent> for EchoHandler {
+impl Handler<MuxEvent> for EchoHandler {
     fn is_terminated(&self) -> bool {
         false
     }
 
-    fn ready(&mut self, event: &EpollEvent) {
+    fn ready(&mut self, event: &MuxEvent) {
 
-        let fd = match EchoProtocol.decode(event.data) {
-            Action::New(_, clifd) => clifd, 
-            Action::Notify(_, clifd) => clifd,
-            Action::NoAction(data) => {
-                let srvfd = data as i32;
-                // only monitoring events from srvfd
-                match eintr!(accept4, "accept4", srvfd, SockFlag::empty()) {
-                    Ok(Some(clifd)) => {
-
-                        trace!("accept4: accepted new tcp client {} in epoll instance {}", &clifd, &self.epfd);
-
-                        let action = Action::Notify(0, clifd);
-                        let interest = EpollEvent {
-                            events: EPOLLIN | EPOLLOUT | EPOLLET,
-                            data: EchoProtocol.encode(action),
-                        };
-
-                        match self.epfd.register(clifd, &interest) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                error!("register: {:?}", e);
-                                perror!("close: {}", close(clifd));
-                            }
-                        };
-                        trace!("epoll_ctl: registered interests for {}", clifd);
-                    }
-                    Ok(None) => error!("accept4: socket not ready"),
-                    Err(e) => {
-                        error!("accept4: {}", e);
-                    }
-                };
-                return;
-            }
-        };
-
-        let kind = event.events;
+        let fd = event.fd;
+        let kind = event.kind;
+        let buf = event.buffer();
 
         if kind.contains(EPOLLHUP) {
             trace!("socket's fd {}: EPOLLHUP", fd);
             perror!("close: {}", close(fd));
+            self.terminated = true;
             return;
         }
 
         if kind.contains(EPOLLERR) {
-            trace!("socket's fd {}: EPOLERR", fd);
-            self.on_error(fd);
+            error!("socket's fd {}: EPOLERR", fd);
         }
 
         if kind.contains(EPOLLIN) {
             trace!("socket's fd {}: EPOLLIN", fd);
-            self.on_readable(fd);
+            if let Some(n) = read(fd, From::from(&mut *buf)).unwrap() {
+                trace!("on_readable(): {:?} bytes", n);
+                buf.extend(n);
+            } else {
+                trace!("on_readable(): socket not ready");
+            }
         }
 
         if kind.contains(EPOLLOUT) {
             trace!("socket's fd {}: EPOLLOUT", fd);
-            self.on_writable(fd);
+            if buf.is_readable() {
+                if let Some(cnt) = rsend(fd, From::from(&*buf), MSG_DONTWAIT).unwrap() {
+                    trace!("on_writable() bytes {}", cnt);
+                    buf.consume(cnt);
+                } else {
+                    trace!("on_writable(): socket not ready");
+                }
+            }
         }
     }
 }
@@ -134,13 +76,21 @@ impl Handler<EpollEvent> for EchoHandler {
 #[derive(Clone, Copy)]
 struct EchoProtocol;
 
-impl StaticProtocol<EchoHandler> for EchoProtocol {
-    fn get_handler(&self, _: usize, epfd: EpollFd, _: usize) -> EchoHandler {
-        EchoHandler::new(epfd)
+impl StaticProtocol<MuxEvent, EchoHandler> for EchoProtocol {
+    fn get_handler(&self, _: usize, _: EpollFd, _: usize) -> EchoHandler {
+        EchoHandler {
+            terminated: false
+        }
     }
 }
 
-impl IOProtocol for EchoProtocol {
+impl StaticProtocol<EpollEvent, SyncMux<EchoHandler, EchoProtocol>> for EchoProtocol {
+    fn get_handler(&self, _: usize, epfd: EpollFd, _: usize) -> SyncMux<EchoHandler, EchoProtocol> {
+        SyncMux::new(BUF_SIZE, MAX_CONN, epfd, EchoProtocol)
+    }
+}
+
+impl MuxProtocol for EchoProtocol {
     type Protocol = usize;
 }
 
@@ -149,7 +99,10 @@ fn main() {
     let config = MuxConfig::new(("127.0.0.1", 10002))
         .unwrap()
         .io_threads(1)
-        .epoll_config(EpollConfig { loop_ms: EPOLL_LOOP_MS, buffer_size: EPOLL_BUF_SIZE });
+        .epoll_config(EpollConfig {
+            loop_ms: EPOLL_LOOP_MS,
+            buffer_size: EPOLL_BUF_SIZE,
+        });
 
     let logging = SimpleLogging::new(::log::LogLevel::Debug);
 

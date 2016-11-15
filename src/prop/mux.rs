@@ -18,7 +18,7 @@ use handler::Handler;
 /// at the specified address. It will create one handler/epoll instance per `io_thread` plus one for the main thread.
 pub struct Mux<H, P>
     where H: Handler<EpollEvent>,
-          P: StaticProtocol<H> + 'static
+          P: StaticProtocol<EpollEvent, H> + 'static
 {
     srvfd: RawFd,
     cepfd: EpollFd,
@@ -75,7 +75,7 @@ impl MuxConfig {
 
 impl<H, P> Mux<H, P>
     where H: Handler<EpollEvent>,
-          P: StaticProtocol<H>
+          P: StaticProtocol<EpollEvent, H>
 {
     pub fn new(config: MuxConfig, protocol: P) -> Result<Mux<H, P>> {
 
@@ -107,7 +107,7 @@ impl<H, P> Mux<H, P>
 
 impl<H, P> Server for Mux<H, P>
     where H: Handler<EpollEvent>,
-          P: StaticProtocol<H>
+          P: StaticProtocol<EpollEvent, H>
 {
     fn get_epoll_config(&self) -> EpollConfig {
         self.epoll_config
@@ -193,7 +193,7 @@ impl<H, P> Server for Mux<H, P>
 
 impl<H, P> Drop for Mux<H, P>
     where H: Handler<EpollEvent>,
-          P: StaticProtocol<H>
+          P: StaticProtocol<EpollEvent, H>
 {
     fn drop(&mut self) {
         let _ = unistd::close(self.srvfd).unwrap();
