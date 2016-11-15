@@ -187,7 +187,7 @@ mod tests {
 
         poll.epfd.register(rfd, &interest).unwrap();
 
-        poll.run_once().unwrap();
+        poll.run_once();
 
         let ev = rx.recv().unwrap();
 

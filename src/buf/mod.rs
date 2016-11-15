@@ -117,14 +117,14 @@ mod tests {
 
     #[test]
     fn does_buffer() {
-        const size: usize = 32;
-        let mut buffer = ByteBuffer::with_capacity(size);
+        const SIZE: usize = 32;
+        let mut buffer = ByteBuffer::with_capacity(SIZE);
 
         let a = [1, 2, 3];
         buffer.write(&a).unwrap();
 
         assert_eq!(buffer.readable(), 3);
-        assert_eq!(buffer.writable(), size - 3);
+        assert_eq!(buffer.writable(), SIZE - 3);
 
         let mut b = [0; 3];
         let bcnt = buffer.read(&mut b).unwrap();
@@ -168,7 +168,7 @@ mod tests {
         assert_eq!(buffer.readable(), 4);
         buffer.consume(1);
         assert_eq!(buffer.readable(), 3);
-        assert_eq!(buffer.writable(), size - 4);
+        assert_eq!(buffer.writable(), SIZE - 4);
 
         let mut w2 = [0; 3];
         let wcnt2 = buffer.read(&mut w2).unwrap();
@@ -177,50 +177,50 @@ mod tests {
         assert_eq!(buffer.readable(), 3);
         buffer.consume(3);
         assert_eq!(buffer.readable(), 0);
-        assert_eq!(buffer.writable(), size);
+        assert_eq!(buffer.writable(), SIZE);
 
-        let xz = [1; size];
+        let xz = [1; SIZE];
         buffer.write(&xz).unwrap();
-        assert_eq!(buffer.readable(), size);
+        assert_eq!(buffer.readable(), SIZE);
         assert_eq!(buffer.writable(), 0);
 
-        let mut w3 = [0; size];
+        let mut w3 = [0; SIZE];
         let wcnt3 = buffer.read(&mut w3).unwrap();
-        assert_eq!(wcnt3, size);
+        assert_eq!(wcnt3, SIZE);
         assert_eq!(w3, xz);
-        assert_eq!(buffer.readable(), size);
-        buffer.consume(size);
+        assert_eq!(buffer.readable(), SIZE);
+        buffer.consume(SIZE);
         assert_eq!(buffer.readable(), 0);
-        assert_eq!(buffer.writable(), size);
+        assert_eq!(buffer.writable(), SIZE);
 
-        let xz = [1; size];
+        let xz = [1; SIZE];
         buffer.write(&xz).unwrap();
 
         let mut w3 = [0; 10];
         let wcnt3 = buffer.read(&mut w3).unwrap();
         assert_eq!(wcnt3, 10);
         assert_eq!(w3, [1; 10]);
-        assert_eq!(buffer.readable(), size);
+        assert_eq!(buffer.readable(), SIZE);
         buffer.consume(wcnt3);
-        assert_eq!(buffer.readable(), size - 10);
+        assert_eq!(buffer.readable(), SIZE - 10);
         assert_eq!(buffer.writable(), 0);
 
         let mut w4 = [0; 22];
         let wcnt4 = buffer.read(&mut w4).unwrap();
         assert_eq!(wcnt4, 22);
         assert_eq!(w4, [1; 22]);
-        assert_eq!(buffer.readable(), size - 10);
+        assert_eq!(buffer.readable(), SIZE - 10);
         buffer.consume(wcnt4);
         assert_eq!(buffer.readable(), 0);
-        assert_eq!(buffer.writable(), size);
+        assert_eq!(buffer.writable(), SIZE);
 
-        buffer.write(&[1; size]).unwrap();
+        buffer.write(&[1; SIZE]).unwrap();
 
         assert!(buffer.write(&[1; 1]).is_err());
 
         buffer.clear();
         assert_eq!(buffer.readable(), 0);
-        assert_eq!(buffer.writable(), size);
+        assert_eq!(buffer.writable(), SIZE);
 
     }
 

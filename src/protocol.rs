@@ -97,7 +97,7 @@ mod tests {
         type Protocol = usize;
     }
 
-    impl DynamicProtocol for TestMuxProtocol {
+    impl DynamicProtocol<EpollEvent> for TestMuxProtocol {
         fn get_handler(&self, _: Self::Protocol, _: EpollFd, _: usize) -> Box<Handler<EpollEvent>> {
             Box::new(TestHandler {
                 on_close: false,
