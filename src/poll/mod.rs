@@ -25,7 +25,7 @@ pub struct EpollConfig {
     pub buffer_size: usize,
 }
 
-pub struct Epoll<H: Handler<EpollEvent>> {
+pub struct Epoll<H: Handler<In=EpollEvent>> {
     pub epfd: EpollFd,
     handler: H,
     loop_ms: isize,
@@ -37,7 +37,7 @@ pub struct EpollFd {
     pub fd: RawFd,
 }
 
-impl<H: Handler<EpollEvent>> Epoll<H> {
+impl<H: Handler<In=EpollEvent>> Epoll<H> {
     pub fn from_fd(epfd: EpollFd, handler: H, config: EpollConfig) -> Epoll<H> {
         Epoll {
             epfd: epfd,
@@ -61,26 +61,31 @@ impl<H: Handler<EpollEvent>> Epoll<H> {
     }
 
     #[inline]
-    fn run_once(&mut self) {
+    fn run_once(&mut self) -> bool {
 
         let dst =
             unsafe { ::std::slice::from_raw_parts_mut(self.buf.as_mut_ptr(), self.buf.capacity()) };
         let cnt = epoll_wait(self.epfd.fd, dst, self.loop_ms).unwrap();
         unsafe { self.buf.set_len(cnt) }
 
-        for ev in self.buf.iter() {
-            self.handler.ready(&ev);
+        {
+            for ev in self.buf.iter() {
+                if let Some(_) = self.handler.ready(*ev) {
+                    return true;
+                }
+            }
         }
+        false
     }
 
     pub fn run(&mut self) {
-        while !self.handler.is_terminated() {
+        while !self.run_once() {
             self.run_once();
         }
     }
 }
 
-impl<H: Handler<EpollEvent>> Drop for Epoll<H> {
+impl<H: Handler<In=EpollEvent>> Drop for Epoll<H> {
     fn drop(&mut self) {
         let _ = unistd::close(self.epfd.fd);
     }
@@ -155,12 +160,16 @@ mod tests {
         tx: Sender<EpollEvent>,
     }
 
-    impl Handler<EpollEvent> for ChannelHandler {
-        fn is_terminated(&self) -> bool {
-            false
-        }
-        fn ready(&mut self, events: &EpollEvent) {
-            self.tx.send(*events).unwrap();
+    impl Handler for ChannelHandler {
+        type In = EpollEvent;
+        type Out = ();
+        fn reset(&mut self) {}
+        fn ready(&mut self, events: EpollEvent) -> Option<()> {
+            if self.tx.send(events).is_ok() {
+                return Some(());
+            }
+
+            None
         }
     }
 

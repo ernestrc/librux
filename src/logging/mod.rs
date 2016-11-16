@@ -9,7 +9,7 @@ use poll::*;
 /// Logging Handler
 /// TODO: use pipes as mpsc and then splice into file
 pub trait LoggingBackend
-    where Self: Handler<EpollEvent> + 'static
+    where Self: Handler<In=EpollEvent, Out=()> + 'static
 {
     fn level(&self) -> LogLevel;
 
@@ -127,11 +127,13 @@ impl LoggingBackend for SimpleLogging {
     }
 }
 
-impl Handler<EpollEvent> for SimpleLogging {
-    fn is_terminated(&self) -> bool {
-        false
-    }
-    fn ready(&mut self, _: &EpollEvent) {
+impl Handler for SimpleLogging {
+    type In = EpollEvent;
+    type Out = ();
+
+    fn reset(&mut self) { }
+
+    fn ready(&mut self, _: EpollEvent) -> Option<()> {
         // let dst = &mut self.buf[self.pos..self.limit];
 
         // if !dst.is_empty() {
@@ -144,5 +146,6 @@ impl Handler<EpollEvent> for SimpleLogging {
         //        }
         //    }
         // }
+        None
     }
 }

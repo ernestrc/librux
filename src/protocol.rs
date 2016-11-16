@@ -11,16 +11,18 @@ pub enum Action<P: MuxProtocol> {
 }
 
 /// Multiplexer Protocol
-pub trait StaticProtocol<E, H: Handler<E>>
+pub trait StaticProtocol<In, Out>
     where Self: MuxProtocol
 {
-    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd, data: usize) -> H;
+    type H: Handler<In=In, Out=Out>;
+
+    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd, data: usize) -> Self::H;
 }
 
-pub trait DynamicProtocol<E>
+pub trait DynamicProtocol<In, Out>
     where Self: MuxProtocol
 {
-    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd, data: usize) -> Box<Handler<E>>;
+    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd, data: usize) -> Box<Handler<In=In, Out=Out>>;
 }
 
 pub trait MuxProtocol
@@ -68,8 +70,15 @@ mod tests {
         on_writable: bool,
     }
 
-    impl Handler<EpollEvent> for TestHandler {
-        fn ready(&mut self, e: &EpollEvent) {
+    impl Handler for TestHandler {
+        type In = EpollEvent;
+        type Out = ();
+
+        fn reset(&mut self) {
+
+        }
+
+        fn ready(&mut self, e: EpollEvent) -> Option<()> {
             let kind = e.events;
 
             if kind.contains(EPOLLERR) {
@@ -87,9 +96,8 @@ mod tests {
             if kind.contains(EPOLLHUP) {
                 self.on_close = true;
             }
-        }
-        fn is_terminated(&self) -> bool {
-            false
+
+            None
         }
     }
 
@@ -97,14 +105,16 @@ mod tests {
         type Protocol = usize;
     }
 
-    impl DynamicProtocol<EpollEvent> for TestMuxProtocol {
-        fn get_handler(&self, _: Self::Protocol, _: EpollFd, _: usize) -> Box<Handler<EpollEvent>> {
-            Box::new(TestHandler {
+    impl StaticProtocol<EpollEvent, ()> for TestMuxProtocol {
+        type H = TestHandler;
+
+        fn get_handler(&self, _: Self::Protocol, _: EpollFd, _: usize) -> TestHandler {
+            TestHandler {
                 on_close: false,
                 on_error: false,
                 on_readable: false,
                 on_writable: false,
-            })
+            }
         }
     }
 

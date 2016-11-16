@@ -22,16 +22,15 @@ const MAX_CONN: usize = 24 * 1024;
 /// Handler that echoes incoming bytes
 ///
 /// For benchmarking I/O throuput and latency
-pub struct EchoHandler {
-    terminated: bool,
-}
+pub struct EchoHandler;
 
-impl Handler<MuxEvent> for EchoHandler {
-    fn is_terminated(&self) -> bool {
-        false
-    }
+impl Handler for EchoHandler {
+    type In = MuxEvent;
+    type Out = ();
 
-    fn ready(&mut self, event: &MuxEvent) {
+    fn reset(&mut self) { }
+
+    fn ready(&mut self, event: MuxEvent) -> Option<()> {
 
         let fd = event.fd;
         let kind = event.kind;
@@ -40,8 +39,7 @@ impl Handler<MuxEvent> for EchoHandler {
         if kind.contains(EPOLLHUP) {
             trace!("socket's fd {}: EPOLLHUP", fd);
             perror!("close: {}", close(fd));
-            self.terminated = true;
-            return;
+            return Some(());
         }
 
         if kind.contains(EPOLLERR) {
@@ -69,24 +67,31 @@ impl Handler<MuxEvent> for EchoHandler {
                 }
             }
         }
+
+        None
     }
 }
 
 #[derive(Clone, Copy)]
 struct EchoProtocol;
 
-impl StaticProtocol<MuxEvent, EchoHandler> for EchoProtocol {
+impl StaticProtocol<MuxEvent, ()> for EchoProtocol {
+    type H = EchoHandler;
+
     fn get_handler(&self, _: usize, _: EpollFd, _: usize) -> EchoHandler {
-        EchoHandler { terminated: false }
+        EchoHandler {}
     }
 }
 
-impl StaticProtocol<EpollEvent, SSyncMux<EchoHandler, EchoProtocol>> for EchoProtocol {
+impl StaticProtocol<EpollEvent, ()> for EchoProtocol {
+
+    type H = SSyncMux<EchoProtocol>;
+
     fn get_handler(&self,
                    _: usize,
                    epfd: EpollFd,
                    _: usize)
-                   -> SSyncMux<EchoHandler, EchoProtocol> {
+                   -> SSyncMux<EchoProtocol> {
         SSyncMux::new(BUF_SIZE, MAX_CONN, epfd, EchoProtocol)
     }
 }

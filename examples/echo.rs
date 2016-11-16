@@ -66,12 +66,13 @@ impl EchoHandler {
     }
 }
 
-impl Handler<EpollEvent> for EchoHandler {
-    fn is_terminated(&self) -> bool {
-        false
-    }
+impl Handler for EchoHandler {
+    type In = EpollEvent;
+    type Out = ();
 
-    fn ready(&mut self, event: &EpollEvent) {
+    fn reset(&mut self) { }
+
+    fn ready(&mut self, event: EpollEvent) -> Option<()> {
 
         let fd = match EchoProtocol.decode(event.data) {
             Action::New(_, clifd) => clifd, 
@@ -106,7 +107,7 @@ impl Handler<EpollEvent> for EchoHandler {
                         error!("accept4: {}", e);
                     }
                 };
-                return;
+                return None;
             }
         };
 
@@ -115,7 +116,7 @@ impl Handler<EpollEvent> for EchoHandler {
         if kind.contains(EPOLLHUP) {
             trace!("socket's fd {}: EPOLLHUP", fd);
             perror!("close: {}", close(fd));
-            return;
+            return None;
         }
 
         if kind.contains(EPOLLERR) {
@@ -132,13 +133,18 @@ impl Handler<EpollEvent> for EchoHandler {
             trace!("socket's fd {}: EPOLLOUT", fd);
             self.on_writable(fd);
         }
+
+        None
     }
 }
 
 #[derive(Clone, Copy)]
 struct EchoProtocol;
 
-impl StaticProtocol<EpollEvent, EchoHandler> for EchoProtocol {
+impl StaticProtocol<EpollEvent, ()> for EchoProtocol {
+
+    type H = EchoHandler;
+
     fn get_handler(&self, _: usize, epfd: EpollFd, _: usize) -> EchoHandler {
         EchoHandler::new(epfd)
     }

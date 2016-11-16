@@ -1,7 +1,6 @@
 use std::net::ToSocketAddrs;
 use std::thread;
 use std::os::unix::io::RawFd;
-use std::marker::PhantomData;
 
 use nix::sys::socket::*;
 use nix::sys::signalfd::*;
@@ -12,13 +11,11 @@ use error::*;
 use poll::*;
 use protocol::StaticProtocol;
 use prop::Run;
-use handler::Handler;
 
 /// Server implementation that creates one AF_INET/SOCK_STREAM socket and uses it to bind/listen
 /// at the specified address. It will create one handler/epoll instance per `io_thread` plus one for the main thread.
-pub struct Server<H, P>
-    where H: Handler<EpollEvent>,
-          P: StaticProtocol<EpollEvent, H> + 'static
+pub struct Server<P>
+    where P: StaticProtocol<EpollEvent, ()> + 'static
 {
     srvfd: RawFd,
     cepfd: EpollFd,
@@ -26,9 +23,7 @@ pub struct Server<H, P>
     max_conn: usize,
     io_threads: usize,
     epoll_config: EpollConfig,
-    terminated: bool,
-    protocol: P,
-    d: PhantomData<H>,
+    protocol: P
 }
 
 pub struct ServerConfig {
@@ -73,11 +68,10 @@ impl ServerConfig {
     }
 }
 
-impl<H, P> Server<H, P>
-    where H: Handler<EpollEvent>,
-          P: StaticProtocol<EpollEvent, H>
+impl<P> Server<P>
+    where P: StaticProtocol<EpollEvent, ()>
 {
-    pub fn new(config: ServerConfig, protocol: P) -> Result<Server<H, P>> {
+    pub fn new(config: ServerConfig, protocol: P) -> Result<Server<P>> {
 
         let ServerConfig { io_threads, max_conn, sockaddr, epoll_config } = config;
 
@@ -99,23 +93,20 @@ impl<H, P> Server<H, P>
             max_conn: max_conn,
             io_threads: io_threads,
             epoll_config: epoll_config,
-            terminated: false,
-            d: PhantomData {},
         })
     }
 }
 
-impl<H, P> Run for Server<H, P>
-    where H: Handler<EpollEvent>,
-          P: StaticProtocol<EpollEvent, H>
+impl<P> Run for Server<P>
+    where P: StaticProtocol<EpollEvent, ()>
 {
     fn get_epoll_config(&self) -> EpollConfig {
         self.epoll_config
     }
 
-    fn stop(&mut self) {
-        self.terminated = true;
-    }
+    // fn stop(&mut self) {
+    //     self.terminated = true;
+    // }
 
     fn run(self, mask: SigSet) -> Result<()> {
         trace!("bind()");
@@ -191,9 +182,8 @@ impl<H, P> Run for Server<H, P>
 }
 
 
-impl<H, P> Drop for Server<H, P>
-    where H: Handler<EpollEvent>,
-          P: StaticProtocol<EpollEvent, H>
+impl<P> Drop for Server<P>
+    where P: StaticProtocol<EpollEvent, ()>
 {
     fn drop(&mut self) {
         let _ = unistd::close(self.srvfd).unwrap();

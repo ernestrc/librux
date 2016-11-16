@@ -16,7 +16,6 @@ pub mod server;
 pub struct Prop<L: LoggingBackend> {
     sigfd: SignalFd,
     lb: L,
-    terminated: bool,
 }
 
 // TODO should take SignalHandler
@@ -66,7 +65,6 @@ impl<L> Prop<L>
             Prop {
                 sigfd: sigfd,
                 lb: lb,
-                terminated: false,
             }
         }));
 
@@ -91,12 +89,15 @@ impl<L: LoggingBackend> Drop for Prop<L> {
     }
 }
 
-impl<L: LoggingBackend> Handler<EpollEvent> for Prop<L> {
-    fn is_terminated(&self) -> bool {
-        self.terminated
+impl<L: LoggingBackend> Handler for Prop<L> {
+    type In = EpollEvent;
+    type Out = ();
+
+    fn reset(&mut self) {
+        self.lb.reset();
     }
 
-    fn ready(&mut self, ev: &EpollEvent) {
+    fn ready(&mut self, ev: EpollEvent) -> Option<()> {
         trace!("ready(): {:?}: {:?}", ev.data, ev.events);
         if ev.data == self.sigfd.as_raw_fd() as u64 {
             match self.sigfd.read_signal() {
@@ -105,10 +106,16 @@ impl<L: LoggingBackend> Handler<EpollEvent> for Prop<L> {
                     // contains SIGINT and SIGTERM
                     warn!("received signal {:?}. Shutting down..", sig.ssi_signo);
                     // terminate server aux loop
-                    self.terminated = true;
+                    Some(())
                 }
-                Ok(None) => debug!("read_signal(): not ready to read"),
-                Err(err) => error!("read_signal(): {}", err),
+                Ok(None) => {
+                    debug!("read_signal(): not ready");
+                    None
+                },
+                Err(err) => {
+                    error!("read_signal(): {}", err);
+                    None
+                },
             }
         } else {
             // delegate events to logging backend
@@ -119,7 +126,7 @@ impl<L: LoggingBackend> Handler<EpollEvent> for Prop<L> {
 
 
 pub trait Run {
-    fn stop(&mut self);
+    // fn stop(&mut self);
 
     fn get_epoll_config(&self) -> EpollConfig;
 
