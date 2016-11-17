@@ -10,25 +10,30 @@ pub enum Action<P: MuxProtocol> {
     NoAction(u64),
 }
 
+pub enum Position<P> {
+    Root,
+    Handler(P)
+}
+
 /// Multiplexer Protocol
 pub trait StaticProtocol<In, Out>
     where Self: MuxProtocol
 {
     type H: Handler<In=In, Out=Out>;
 
-    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd, data: usize) -> Self::H;
+    fn get_handler(&self, of: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Self::H;
 }
 
 pub trait DynamicProtocol<In, Out>
     where Self: MuxProtocol
 {
-    fn get_handler(&self, p: Self::Protocol, epfd: EpollFd, data: usize) -> Box<Handler<In=In, Out=Out>>;
+    fn get_handler(&self, of: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Box<Handler<In=In, Out=Out>>;
 }
 
 pub trait MuxProtocol
-    where Self: Sized + Send + Copy
+    where Self: Send + Clone
 {
-    type Protocol: From<usize> + Into<usize> + Copy;
+    type Protocol: From<usize> + Into<usize>;
 
     fn encode(&self, action: Action<Self>) -> u64 {
         match action {
@@ -58,7 +63,7 @@ mod tests {
     use handler::Handler;
     use super::*;
 
-    #[derive(Clone, Copy)]
+    #[derive(Clone)]
     struct TestMuxProtocol;
 
     const PROTO1: usize = 1;
@@ -108,7 +113,7 @@ mod tests {
     impl StaticProtocol<EpollEvent, ()> for TestMuxProtocol {
         type H = TestHandler;
 
-        fn get_handler(&self, _: Self::Protocol, _: EpollFd, _: usize) -> TestHandler {
+        fn get_handler(&self, _: Position<usize>, _: EpollFd, _: usize) -> TestHandler {
             TestHandler {
                 on_close: false,
                 on_error: false,

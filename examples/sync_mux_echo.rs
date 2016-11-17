@@ -72,13 +72,13 @@ impl Handler for EchoHandler {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct EchoProtocol;
 
 impl StaticProtocol<MuxEvent, ()> for EchoProtocol {
     type H = EchoHandler;
 
-    fn get_handler(&self, _: usize, _: EpollFd, _: usize) -> EchoHandler {
+    fn get_handler(&self, _: Position<usize>, _: EpollFd, _: usize) -> EchoHandler {
         EchoHandler {}
     }
 }
@@ -88,7 +88,7 @@ impl StaticProtocol<EpollEvent, ()> for EchoProtocol {
     type H = SSyncMux<EchoProtocol>;
 
     fn get_handler(&self,
-                   _: usize,
+                   _: Position<usize>,
                    epfd: EpollFd,
                    _: usize)
                    -> SSyncMux<EchoProtocol> {

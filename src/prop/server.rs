@@ -9,7 +9,7 @@ use nix::sched;
 
 use error::*;
 use poll::*;
-use protocol::StaticProtocol;
+use protocol::*;
 use prop::Run;
 
 /// Server implementation that creates one AF_INET/SOCK_STREAM socket and uses it to bind/listen
@@ -104,10 +104,6 @@ impl<P> Run for Server<P>
         self.epoll_config
     }
 
-    // fn stop(&mut self) {
-    //     self.terminated = true;
-    // }
-
     fn run(self, mask: SigSet) -> Result<()> {
         trace!("bind()");
 
@@ -130,10 +126,10 @@ impl<P> Run for Server<P>
         let io_threads = self.io_threads;
         let epoll_config = self.epoll_config;
         let srvfd = self.srvfd;
-        let protocol = self.protocol;
 
         for i in 1..io_threads {
 
+            let protocol = self.protocol.clone();
             let epfd = EpollFd::new(try!(epoll_create()));
 
             try!(epfd.register(srvfd, &ceinfo));
@@ -145,7 +141,7 @@ impl<P> Run for Server<P>
                 // add the set of signals to the signal mask for all threads
                 mask.thread_block().unwrap();
                 let mut epoll = Epoll::from_fd(epfd,
-                                               protocol.get_handler(From::from(0_usize), epfd, i),
+                                               protocol.get_handler(Position::Root, epfd, i),
                                                epoll_config);
 
                 let aff = i % ::num_cpus::get();
@@ -162,7 +158,7 @@ impl<P> Run for Server<P>
         }
 
         let mut epoll = Epoll::from_fd(self.cepfd,
-                                       protocol.get_handler(From::from(0_usize), self.cepfd, 0),
+                                       self.protocol.get_handler(Position::Root, self.cepfd, 0),
                                        epoll_config);
 
         debug!("created {} I/O epoll instances", self.io_threads);

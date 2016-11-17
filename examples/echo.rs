@@ -138,14 +138,14 @@ impl Handler for EchoHandler {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct EchoProtocol;
 
 impl StaticProtocol<EpollEvent, ()> for EchoProtocol {
 
     type H = EchoHandler;
 
-    fn get_handler(&self, _: usize, epfd: EpollFd, _: usize) -> EchoHandler {
+    fn get_handler(&self, _: Position<usize>, epfd: EpollFd, _: usize) -> EchoHandler {
         EchoHandler::new(epfd)
     }
 }

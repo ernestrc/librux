@@ -126,8 +126,6 @@ impl<L: LoggingBackend> Handler for Prop<L> {
 
 
 pub trait Run {
-    // fn stop(&mut self);
-
     fn get_epoll_config(&self) -> EpollConfig;
 
     fn run(self, mask: SigSet) -> Result<()>;

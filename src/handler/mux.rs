@@ -41,7 +41,7 @@ impl<P: StaticProtocol<MuxEvent, ()>> SSyncMux<P> {
     }
 
     fn new_handler(protocol: &P,
-                   proto: P::Protocol,
+                   proto: Position<P::Protocol>,
                    clifd: RawFd,
                    epfd: &EpollFd,
                    handlers: &mut Slab<P::H, usize>)
@@ -54,7 +54,7 @@ impl<P: StaticProtocol<MuxEvent, ()>> SSyncMux<P> {
                 entry.insert(h);
 
                 let action = Action::Notify(i, clifd);
-                // TODO get_handler should be `next` and should return somehow interests
+                // TODO interest should be passed by protocol/handler
                 let interest = EpollEvent {
                     events: EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLET,
                     data: protocol.encode(action),
@@ -84,7 +84,7 @@ impl<P: StaticProtocol<MuxEvent, ()>> SSyncMux<P> {
 
         match protocol.decode(event.data) {
             Action::New(proto, clifd) => {
-                let (idx, fd) = Self::new_handler(protocol, proto, clifd, epfd, handlers)?;
+                let (idx, fd) = Self::new_handler(protocol, Position::Handler(proto), clifd, epfd, handlers)?;
                 Ok(Some((idx, fd)))
             }
             Action::Notify(i, fd) => Ok(Some((i, fd))),
@@ -93,7 +93,7 @@ impl<P: StaticProtocol<MuxEvent, ()>> SSyncMux<P> {
                 match eintr!(accept4, "accept4", srvfd, SockFlag::empty()) {
                     Ok(Some(clifd)) => {
                         trace!("accept4: accepted new tcp client {}", &clifd);
-                        Self::new_handler(protocol, From::from(1_usize), clifd, epfd, handlers)?;
+                        Self::new_handler(protocol, Position::Root, clifd, epfd, handlers)?;
                         Ok(None)
                     }
                     Ok(None) => Err("accept4: socket not ready".into()),
