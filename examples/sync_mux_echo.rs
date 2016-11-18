@@ -75,7 +75,7 @@ impl Handler for EchoHandler {
 #[derive(Clone)]
 struct EchoProtocol;
 
-impl StaticProtocol<MuxEvent, ()> for EchoProtocol {
+impl <'p> StaticProtocol<'p, MuxEvent, ()> for EchoProtocol {
     type H = EchoHandler;
 
     fn get_handler(&self, _: Position<usize>, _: EpollFd, _: usize) -> EchoHandler {
@@ -83,16 +83,16 @@ impl StaticProtocol<MuxEvent, ()> for EchoProtocol {
     }
 }
 
-impl StaticProtocol<EpollEvent, ()> for EchoProtocol {
+impl <'p> StaticProtocol<'p, EpollEvent, ()> for EchoProtocol {
 
-    type H = SSyncMux<EchoProtocol>;
+    type H = SSyncMux<'p, EchoProtocol>;
 
-    fn get_handler(&self,
+    fn get_handler(&'p self,
                    _: Position<usize>,
                    epfd: EpollFd,
                    _: usize)
-                   -> SSyncMux<EchoProtocol> {
-        SSyncMux::new(BUF_SIZE, MAX_CONN, epfd, EchoProtocol)
+                   -> SSyncMux<'p, EchoProtocol> {
+        SSyncMux::new(BUF_SIZE, MAX_CONN, epfd, &self)
     }
 }
 
@@ -102,7 +102,7 @@ impl MuxProtocol for EchoProtocol {
 
 fn main() {
 
-    let config = ServerConfig::new(("127.0.0.1", 10002))
+    let config = ServerConfig::new(("127.0.0.1", 10003))
         .unwrap()
         .io_threads(1)
         .epoll_config(EpollConfig {
@@ -111,6 +111,7 @@ fn main() {
         });
 
     let logging = SimpleLogging::new(::log::LogLevel::Debug);
+    let protocol = EchoProtocol;
 
-    Prop::create(Server::new(config, EchoProtocol).unwrap(), logging).unwrap();
+    Prop::create(Server::new(config).unwrap(), logging, &protocol).unwrap();
 }

@@ -23,15 +23,15 @@ impl MuxEvent {
     }
 }
 
-pub struct SSyncMux<P: StaticProtocol<MuxEvent, ()>> {
+pub struct SSyncMux<'p, P: StaticProtocol<'p, MuxEvent, ()>> {
     epfd: EpollFd,
     buffers: Vec<ByteBuffer>,
     handlers: Slab<P::H, usize>,
-    protocol: P,
+    protocol: &'p P,
 }
 
-impl<P: StaticProtocol<MuxEvent, ()>> SSyncMux<P> {
-    pub fn new(buffer_size: usize, max_handlers: usize, epfd: EpollFd, protocol: P) -> SSyncMux<P> {
+impl<'p, P: StaticProtocol<'p, MuxEvent, ()>> SSyncMux<'p, P> {
+    pub fn new(buffer_size: usize, max_handlers: usize, epfd: EpollFd, protocol: &'p P) -> SSyncMux<'p, P> {
         SSyncMux {
             epfd: epfd,
             buffers: vec!(ByteBuffer::with_capacity(buffer_size); max_handlers),
@@ -40,7 +40,7 @@ impl<P: StaticProtocol<MuxEvent, ()>> SSyncMux<P> {
         }
     }
 
-    fn new_handler(protocol: &P,
+    fn new_handler(protocol: &'p P,
                    proto: Position<P::Protocol>,
                    clifd: RawFd,
                    epfd: &EpollFd,
@@ -76,7 +76,7 @@ impl<P: StaticProtocol<MuxEvent, ()>> SSyncMux<P> {
         }
     }
 
-    fn decode(protocol: &P,
+    fn decode(protocol: &'p P,
               epfd: &EpollFd,
               event: EpollEvent,
               handlers: &mut Slab<P::H, usize>)
@@ -104,8 +104,8 @@ impl<P: StaticProtocol<MuxEvent, ()>> SSyncMux<P> {
     }
 }
 
-impl<P> Handler for SSyncMux<P>
-    where P: StaticProtocol<MuxEvent, ()>
+impl<'p, P> Handler for SSyncMux<'p, P>
+    where P: StaticProtocol<'p, MuxEvent, ()>
 {
     type In = EpollEvent;
     type Out = ();
@@ -117,7 +117,7 @@ impl<P> Handler for SSyncMux<P>
     fn ready(&mut self, event: EpollEvent) -> Option<()> {
 
         let (idx, fd) =
-            match SSyncMux::decode(&self.protocol, &self.epfd, event, &mut self.handlers) {
+            match SSyncMux::decode(self.protocol, &self.epfd, event, &mut self.handlers) {
                 Ok(Some((idx, fd))) => (idx, fd),
                 Ok(None) => {
                     // new connection

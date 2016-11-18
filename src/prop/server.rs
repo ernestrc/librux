@@ -1,9 +1,9 @@
 use std::net::ToSocketAddrs;
-use std::thread;
 use std::os::unix::io::RawFd;
 
 use nix::sys::socket::*;
-use nix::sys::signalfd::*;
+use nix::sys::signalfd::SigSet;
+use nix::sys::signal;
 use nix::unistd;
 use nix::sched;
 
@@ -14,16 +14,14 @@ use prop::Run;
 
 /// Server implementation that creates one AF_INET/SOCK_STREAM socket and uses it to bind/listen
 /// at the specified address. It will create one handler/epoll instance per `io_thread` plus one for the main thread.
-pub struct Server<P>
-    where P: StaticProtocol<EpollEvent, ()> + 'static
-{
+pub struct Server {
     srvfd: RawFd,
     cepfd: EpollFd,
     sockaddr: SockAddr,
     max_conn: usize,
     io_threads: usize,
+    children: Vec<i32>,
     epoll_config: EpollConfig,
-    protocol: P
 }
 
 pub struct ServerConfig {
@@ -68,10 +66,8 @@ impl ServerConfig {
     }
 }
 
-impl<P> Server<P>
-    where P: StaticProtocol<EpollEvent, ()>
-{
-    pub fn new(config: ServerConfig, protocol: P) -> Result<Server<P>> {
+impl Server {
+    pub fn new(config: ServerConfig) -> Result<Server> {
 
         let ServerConfig { io_threads, max_conn, sockaddr, epoll_config } = config;
 
@@ -88,8 +84,8 @@ impl<P> Server<P>
         Ok(Server {
             sockaddr: sockaddr,
             cepfd: cepfd,
-            protocol: protocol,
             srvfd: srvfd,
+            children: Vec::with_capacity(io_threads),
             max_conn: max_conn,
             io_threads: io_threads,
             epoll_config: epoll_config,
@@ -97,14 +93,14 @@ impl<P> Server<P>
     }
 }
 
-impl<P> Run for Server<P>
-    where P: StaticProtocol<EpollEvent, ()>
+impl<'p, P> Run<'p, P> for Server
+    where P: StaticProtocol<'p, EpollEvent, ()>
 {
     fn get_epoll_config(&self) -> EpollConfig {
         self.epoll_config
     }
 
-    fn run(self, mask: SigSet) -> Result<()> {
+    fn run(mut self, mask: SigSet, protocol: &'p P) -> Result<()> {
         trace!("bind()");
 
         try!(eintr!(bind, "bind", self.srvfd, &self.sockaddr));
@@ -129,36 +125,41 @@ impl<P> Run for Server<P>
 
         for i in 1..io_threads {
 
-            let protocol = self.protocol.clone();
             let epfd = EpollFd::new(try!(epoll_create()));
 
             try!(epfd.register(srvfd, &ceinfo));
             trace!("registered thread's {} interest on {}", i, srvfd);
 
 
-            thread::spawn(move || {
-                trace!("spawned new thread {}", i);
-                // add the set of signals to the signal mask for all threads
-                mask.thread_block().unwrap();
-                let mut epoll = Epoll::from_fd(epfd,
-                                               protocol.get_handler(Position::Root, epfd, i),
-                                               epoll_config);
+            match unistd::fork() {
+                Ok(unistd::ForkResult::Parent { child, .. }) => {
+                    debug!("created I/O child process n {} with pid {}", i, child);
+                    self.children.push(child);
+                    continue;
+                }
+                Ok(unistd::ForkResult::Child) => {
+                    // add the set of signals to the signal mask for all threads
+                    mask.thread_block().unwrap();
+                    let handler = protocol.get_handler(Position::Root, epfd, i);
+                    let mut epoll = Epoll::from_fd(epfd, handler, epoll_config);
 
-                let aff = i % ::num_cpus::get();
-                let mut cpuset = sched::CpuSet::new();
-                cpuset.set(aff).unwrap();
+                    let aff = i % ::num_cpus::get();
+                    let mut cpuset = sched::CpuSet::new();
+                    cpuset.set(aff).unwrap();
 
-                sched::sched_setaffinity(0, &cpuset).unwrap();
+                    sched::sched_setaffinity(0, &cpuset).unwrap();
 
-                debug!("set thread's {} affinity to cpu {}", i, aff);
+                    debug!("set thread's {} affinity to cpu {}", i, aff);
 
-                info!("starting I/O thread's {} event loop", i);
-                epoll.run();
-            });
+                    info!("starting I/O thread's {} event loop", i);
+                    epoll.run();
+                }
+                Err(e) => panic!("fork(): {}", e),
+            }
         }
 
         let mut epoll = Epoll::from_fd(self.cepfd,
-                                       self.protocol.get_handler(Position::Root, self.cepfd, 0),
+                                       protocol.get_handler(Position::Root, self.cepfd, 0),
                                        epoll_config);
 
         debug!("created {} I/O epoll instances", self.io_threads);
@@ -178,10 +179,11 @@ impl<P> Run for Server<P>
 }
 
 
-impl<P> Drop for Server<P>
-    where P: StaticProtocol<EpollEvent, ()>
-{
+impl Drop for Server {
     fn drop(&mut self) {
         let _ = unistd::close(self.srvfd).unwrap();
+        for child in self.children.iter() {
+            signal::kill(*child, signal::Signal::SIGKILL).unwrap();
+        }
     }
 }

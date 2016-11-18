@@ -28,4 +28,6 @@ time = "*"
 pad = "*"
 
 [profile.release]
+opt-level = 3
 debug = true
+lto = false

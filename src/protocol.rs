@@ -1,5 +1,4 @@
 use std::os::unix::io::RawFd;
-use std::boxed::Box;
 
 use poll::EpollFd;
 use handler::Handler;
@@ -15,25 +14,22 @@ pub enum Position<P> {
     Handler(P)
 }
 
-/// Multiplexer Protocol
-pub trait StaticProtocol<In, Out>
-    where Self: MuxProtocol
+pub trait StaticProtocol<'proto, In, Out>
+    where Self: MuxProtocol + 'proto
 {
     type H: Handler<In=In, Out=Out>;
 
-    fn get_handler(&self, of: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Self::H;
+    fn get_handler(&'proto self, of: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Self::H;
 }
 
-pub trait DynamicProtocol<In, Out>
-    where Self: MuxProtocol
-{
-    fn get_handler(&self, of: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Box<Handler<In=In, Out=Out>>;
-}
-
+// TODO add get_handler with From<Handler> Into<Handler>
 pub trait MuxProtocol
-    where Self: Send + Clone
+    where Self: Sized
 {
     type Protocol: From<usize> + Into<usize>;
+    // type H: From<Handler<In=In, Out=Out>>;
+
+    // fn get_handler(&self, of: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Self::H;
 
     fn encode(&self, action: Action<Self>) -> u64 {
         match action {
@@ -110,7 +106,7 @@ mod tests {
         type Protocol = usize;
     }
 
-    impl StaticProtocol<EpollEvent, ()> for TestMuxProtocol {
+    impl <'p> StaticProtocol<'p, EpollEvent, ()> for TestMuxProtocol {
         type H = TestHandler;
 
         fn get_handler(&self, _: Position<usize>, _: EpollFd, _: usize) -> TestHandler {
