@@ -7,8 +7,7 @@ use nix::unistd;
 use error::Result;
 use handler::Handler;
 
-pub use nix::sys::epoll::{epoll_create, EpollEvent, EpollEventKind, EPOLLIN, EPOLLOUT, EPOLLERR,
-                          EPOLLHUP, EPOLLET, EPOLLONESHOT, EPOLLRDHUP, EPOLLEXCLUSIVE, EPOLLWAKEUP};
+pub use nix::sys::epoll::{epoll_create, EpollEvent, EpollEventKind, EPOLLIN, EPOLLOUT, EPOLLERR, EPOLLHUP, EPOLLET, EPOLLONESHOT, EPOLLRDHUP, EPOLLEXCLUSIVE, EPOLLWAKEUP};
 
 lazy_static! {
     static ref NO_INTEREST: EpollEvent = {
@@ -79,9 +78,7 @@ impl<H: Handler<In=EpollEvent>> Epoll<H> {
     }
 
     pub fn run(&mut self) {
-        while !self.run_once() {
-            self.run_once();
-        }
+        while !self.run_once() { }
     }
 }
 

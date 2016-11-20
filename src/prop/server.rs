@@ -91,6 +91,17 @@ impl Server {
             epoll_config: epoll_config,
         })
     }
+
+    fn shutdown(&self) {
+        debug!("{:?} killing child I/O processes: {:?}",
+               unistd::getpid(),
+               &self.children);
+        for child in self.children.iter() {
+            debug!("killing child {:?}", child);
+            signal::kill(*child, signal::Signal::SIGKILL).unwrap();
+        }
+        unistd::close(self.srvfd).unwrap();
+    }
 }
 
 impl<'p, P> Run<'p, P> for Server
@@ -100,7 +111,7 @@ impl<'p, P> Run<'p, P> for Server
         self.epoll_config
     }
 
-    fn run(mut self, mask: SigSet, protocol: &'p P) -> Result<()> {
+    fn setup(&mut self, mask: SigSet, protocol: &'p P) -> Result<Epoll<P::H>> {
         trace!("bind()");
 
         try!(eintr!(bind, "bind", self.srvfd, &self.sockaddr));
@@ -117,7 +128,7 @@ impl<'p, P> Run<'p, P> for Server
         };
 
         try!(self.cepfd.register(self.srvfd, &ceinfo));
-        trace!("registered main thread's interest on {}", self.srvfd);
+        trace!("registered main process interest on {}", self.srvfd);
 
         let io_threads = self.io_threads;
         let epoll_config = self.epoll_config;
@@ -128,13 +139,17 @@ impl<'p, P> Run<'p, P> for Server
             let epfd = EpollFd::new(try!(epoll_create()));
 
             try!(epfd.register(srvfd, &ceinfo));
-            trace!("registered thread's {} interest on {}", i, srvfd);
+            trace!("registered process {} interest on {}", i, srvfd);
 
 
             match unistd::fork() {
                 Ok(unistd::ForkResult::Parent { child, .. }) => {
-                    debug!("created I/O child process n {} with pid {}", i, child);
+                    debug!("{:?} created I/O child process n {} with pid {}",
+                           unistd::getpid(),
+                           i,
+                           child);
                     self.children.push(child);
+                    trace!("{:?} children: {:?}", unistd::getpid(), self.children);
                     continue;
                 }
                 Ok(unistd::ForkResult::Child) => {
@@ -149,21 +164,22 @@ impl<'p, P> Run<'p, P> for Server
 
                     sched::sched_setaffinity(0, &cpuset).unwrap();
 
-                    debug!("set thread's {} affinity to cpu {}", i, aff);
+                    debug!("set process {} affinity to cpu {}", i, aff);
 
-                    info!("starting I/O thread's {} event loop", i);
+                    info!("starting I/O process {} event loop", i);
                     epoll.run();
+                    return Err(format!("stopped event loop of {}", i).into());
                 }
                 Err(e) => panic!("fork(): {}", e),
             }
         }
 
-        let mut epoll = Epoll::from_fd(self.cepfd,
-                                       protocol.get_handler(Position::Root, self.cepfd, 0),
-                                       epoll_config);
+        let epoll = Epoll::from_fd(self.cepfd,
+                                   protocol.get_handler(Position::Root, self.cepfd, 0),
+                                   epoll_config);
 
         debug!("created {} I/O epoll instances", self.io_threads);
-        info!("starting I/O thread's 0 event loop");
+        info!("starting I/O process 0 event loop");
 
         let aff = 0;
         let mut cpuset = sched::CpuSet::new();
@@ -171,19 +187,19 @@ impl<'p, P> Run<'p, P> for Server
 
         sched::sched_setaffinity(0, &cpuset).unwrap();
 
-        debug!("set thread's 0 affinity to cpu {}", aff);
+        debug!("set process 0 affinity to cpu {}", aff);
 
-        epoll.run();
-        Ok(())
+        Ok(epoll)
+    }
+
+    fn stop(&self) {
+        self.shutdown();
     }
 }
 
 
 impl Drop for Server {
     fn drop(&mut self) {
-        let _ = unistd::close(self.srvfd).unwrap();
-        for child in self.children.iter() {
-            signal::kill(*child, signal::Signal::SIGKILL).unwrap();
-        }
+        // self.shutdown();
     }
 }

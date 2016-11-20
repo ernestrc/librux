@@ -18,14 +18,15 @@ path = "benches/buf.rs"
 
 [dependencies]
 nix = { version = "0.7.0", features = ["signalfd"] }
-# TODO provide own macros
-log = "0.3.6"
 num_cpus = "1.1.0"
 slab = "0.3.0"
 lazy_static = "0.2.1"
 error-chain = "*"
 time = "*"
 pad = "*"
+# TODO provide own macros
+env_logger = "*"
+log = "0.3.6"
 
 [profile.release]
 opt-level = 3

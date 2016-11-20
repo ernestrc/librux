@@ -2,6 +2,7 @@
 extern crate log;
 #[macro_use]
 extern crate rux;
+extern crate env_logger;
 
 use rux::{read, send as rsend, close};
 use rux::handler::*;
@@ -28,7 +29,7 @@ impl Handler for EchoHandler {
     type In = MuxEvent;
     type Out = ();
 
-    fn reset(&mut self) { }
+    fn reset(&mut self) {}
 
     fn ready(&mut self, event: MuxEvent) -> Option<()> {
 
@@ -75,7 +76,7 @@ impl Handler for EchoHandler {
 #[derive(Clone)]
 struct EchoProtocol;
 
-impl <'p> StaticProtocol<'p, MuxEvent, ()> for EchoProtocol {
+impl<'p> StaticProtocol<'p, MuxEvent, ()> for EchoProtocol {
     type H = EchoHandler;
 
     fn get_handler(&self, _: Position<usize>, _: EpollFd, _: usize) -> EchoHandler {
@@ -83,8 +84,7 @@ impl <'p> StaticProtocol<'p, MuxEvent, ()> for EchoProtocol {
     }
 }
 
-impl <'p> StaticProtocol<'p, EpollEvent, ()> for EchoProtocol {
-
+impl<'p> StaticProtocol<'p, EpollEvent, ()> for EchoProtocol {
     type H = SSyncMux<'p, EchoProtocol>;
 
     fn get_handler(&'p self,
@@ -102,15 +102,17 @@ impl MuxProtocol for EchoProtocol {
 
 fn main() {
 
-    let config = ServerConfig::new(("127.0.0.1", 10003))
+    ::env_logger::init().unwrap();
+
+    let config = ServerConfig::new(("127.0.0.1", 10017))
         .unwrap()
-        .io_threads(1)
+        .io_threads(4)
         .epoll_config(EpollConfig {
             loop_ms: EPOLL_LOOP_MS,
             buffer_size: EPOLL_BUF_SIZE,
         });
 
-    let logging = SimpleLogging::new(::log::LogLevel::Debug);
+    let logging = SimpleLogging::new(::log::LogLevel::Trace);
     let protocol = EchoProtocol;
 
     Prop::create(Server::new(config).unwrap(), logging, &protocol).unwrap();

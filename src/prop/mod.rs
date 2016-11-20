@@ -1,7 +1,7 @@
 use std::os::unix::io::AsRawFd;
 
 use nix::sys::signalfd::*;
-use nix::sys::signal::{SIGINT, SIGTERM};
+use nix::sys::signal::{SIGINT, SIGTERM, SIGCHLD, Signal};
 use nix::unistd;
 
 use error::Result;
@@ -12,19 +12,21 @@ use protocol::*;
 
 pub mod server;
 
-pub struct Prop<L: LoggingBackend> {
+pub struct Prop<'p, L: LoggingBackend, P: StaticProtocol<'p, EpollEvent, ()>, I: Run<'p, P>> {
     sigfd: SignalFd,
     lb: L,
-    childpid: i32,
+    parentpid: i32,
+    im: I,
+    _marker: ::std::marker::PhantomData<&'p bool>,
+    _marker2: ::std::marker::PhantomData<P>,
 }
 
-impl<L> Prop<L>
-    where L: LoggingBackend
+impl<'p, L, P, I> Prop<'p, L, P, I>
+    where L: LoggingBackend,
+          P: StaticProtocol<'p, EpollEvent, ()>,
+          I: Run<'p, P>
 {
-    pub fn create<'p, P, I>(im: I, lb: L, p: &'p P) -> Result<()>
-        where P: StaticProtocol<'p, EpollEvent, ()>,
-              I: Run<'p, P>
-    {
+    pub fn create(mut im: I, lb: L, p: &'p P) -> Result<()> {
 
         trace!("bind()");
 
@@ -32,6 +34,7 @@ impl<L> Prop<L>
         let mut mask = SigSet::empty();
         mask.add(SIGINT);
         mask.add(SIGTERM);
+        mask.add(SIGCHLD);
 
         let econfig = im.get_epoll_config();
 
@@ -42,37 +45,49 @@ impl<L> Prop<L>
         let sigfd = try!(SignalFd::with_flags(&mask, SFD_NONBLOCK));
         let fd = sigfd.as_raw_fd();
 
-        let childpid = match unistd::fork() {
+        // TODO setup logging
+        // delegate logging registering to logging backend
+        // TODO let log = lb.setup(&epfd).unwrap();
+
+        // ::log::set_logger(|max_log_level| {
+        //         max_log_level.set(lb.level().to_log_level_filter());
+        //         log
+        //     }).unwrap();
+
+
+        let parentpid = unistd::getpid();
+
+        let mut main = im.setup(mask, p).unwrap();
+
+        match unistd::fork() {
             Ok(unistd::ForkResult::Parent { child, .. }) => {
-                debug!("created I/O child process n {} with pid {}", 0, child);
-                child
+                mask.thread_block().unwrap();
+                debug!("{:?} created I/O child process n {} with pid {}",
+                       unistd::getpid(),
+                       0,
+                       child);
+                info!("{:?} starting main event loop", unistd::getpid());
+                // run impl's I/O event loop(s)
+                main.run();
+                return Err("terminated I/O child process".into());
             }
             Ok(unistd::ForkResult::Child) => {
-                mask.thread_block().unwrap();
-                // run impl's I/O event loop(s)
-                im.run(mask, p).unwrap();
-                return Err("terminated I/O child process".into());
+                // continue
             }
             Err(e) => {
                 return Err(e.into());
             }
         };
 
-        let mut epoll = try!(Epoll::new_with(econfig, |epfd| {
-
-            // delegate logging registering to logging backend
-            let log = lb.setup(&epfd).unwrap();
-
-            ::log::set_logger(|max_log_level| {
-                    max_log_level.set(lb.level().to_log_level_filter());
-                    log
-                })
-                .unwrap();
+        let mut aux = try!(Epoll::new_with(econfig, |epfd| {
 
             Prop {
                 sigfd: sigfd,
                 lb: lb,
-                childpid: childpid
+                parentpid: parentpid,
+                im: im,
+                _marker: ::std::marker::PhantomData {},
+                _marker2: ::std::marker::PhantomData {},
             }
         }));
 
@@ -82,23 +97,32 @@ impl<L> Prop<L>
         };
 
         // register signalfd with epfd
-        try!(epoll.epfd.register(fd, &siginfo));
+        try!(aux.epfd.register(fd, &siginfo));
 
         // run aux event loop
-        epoll.run();
+        info!("{:?} starting aux event loop", unistd::getpid());
+        aux.run();
 
         Ok(())
     }
 }
 
-impl<L: LoggingBackend> Drop for Prop<L> {
+impl<'p, L, P, I> Drop for Prop<'p, L, P, I>
+    where L: LoggingBackend,
+          P: StaticProtocol<'p, EpollEvent, ()>,
+          I: Run<'p, P>
+{
     fn drop(&mut self) {
         // signalfd is closed by the SignalFd struct
         // and epfd is closed by EpollFd
     }
 }
 
-impl<L: LoggingBackend> Handler for Prop<L> {
+impl<'p, L, P, I> Handler for Prop<'p, L, P, I>
+    where L: LoggingBackend,
+          P: StaticProtocol<'p, EpollEvent, ()>,
+          I: Run<'p, P>
+{
     type In = EpollEvent;
     type Out = ();
 
@@ -106,17 +130,24 @@ impl<L: LoggingBackend> Handler for Prop<L> {
         self.lb.reset();
     }
 
+    // TODO should take sig handler
     fn ready(&mut self, ev: EpollEvent) -> Option<()> {
         trace!("ready(): {:?}: {:?}", ev.data, ev.events);
         if ev.data == self.sigfd.as_raw_fd() as u64 {
             match self.sigfd.read_signal() {
-                // TODO should take sig handler
+                Ok(Some(sig)) if Signal::from_c_int(sig.ssi_signo as i32).unwrap() == SIGCHLD => {
+                    error!("child process quit unexpectedly ({:?}). Shutting down..",
+                           sig.ssi_signo);
+                    Some(())
+                }
                 Ok(Some(sig)) => {
-                    // stop server's event loop, as the signal mask
-                    // contains SIGINT and SIGTERM
-                    warn!("received signal {:?}. Shutting down..", sig.ssi_signo);
-                    // terminate impl child process
-                    signal::kill(self.childpid, signal::Signal::SIGKILL).unwrap();
+                    warn!("{:?} received signal {:?}. Shutting down parent pid {:?}..",
+                          unistd::getpid(),
+                          sig.ssi_signo,
+                          self.parentpid);
+                    // terminate child processes
+                    self.im.stop();
+                    signal::kill(self.parentpid, signal::Signal::SIGKILL).unwrap();
                     // terminate server aux loop
                     Some(())
                 }
@@ -140,5 +171,7 @@ impl<L: LoggingBackend> Handler for Prop<L> {
 pub trait Run<'p, P: StaticProtocol<'p, EpollEvent, ()>> {
     fn get_epoll_config(&self) -> EpollConfig;
 
-    fn run(self, mask: SigSet, proto: &'p P) -> Result<()>;
+    fn stop(&self);
+
+    fn setup(&mut self, mask: SigSet, protocol: &'p P) -> Result<Epoll<P::H>>;
 }

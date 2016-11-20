@@ -7,12 +7,12 @@ use poll::*;
 
 /// TODO: provide debug/warn/info/... macro implementations with thread_local!
 /// Logging Handler
-/// TODO: use pipes as mpsc and then splice into file
 pub trait LoggingBackend
     where Self: Handler<In=EpollEvent, Out=()> + 'static
 {
     fn level(&self) -> LogLevel;
 
+    // TODO should pass pipe buffer to communicate with aux event loop
     fn setup(&self, epfd: &EpollFd) -> Result<Box<Log>>;
 }
 
