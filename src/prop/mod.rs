@@ -12,20 +12,19 @@ use protocol::*;
 
 pub mod server;
 
-pub struct Prop<'p, L: LoggingBackend<'p> + 'p, I: Run + 'p> {
+pub struct Prop<L, R> {
     sigfd: SignalFd,
     lb: L,
     parentpid: i32,
-    im: I,
-    _marker: ::std::marker::PhantomData<&'p bool>,
+    run: R,
 }
 
-impl<'p, L, I> Prop<'p, L, I>
-    where L: LoggingBackend<'p> + 'p,
-          I: Run + 'p
+impl<'p, L, R> Prop<L, R>
+    where L: LoggingBackend,
+          R: Run
 {
-    pub fn create<P>(im: I, lb: L, p: &'p mut P) -> Result<()>
-        where P: StaticProtocol<'p, 'p, EpollEvent, ()>
+    pub fn create<P>(mut run: R, lb: L, p: &'p P) -> Result<()>
+        where P: StaticProtocol<'p, EpollEvent, ()>
     {
 
         trace!("bind()");
@@ -36,7 +35,7 @@ impl<'p, L, I> Prop<'p, L, I>
         mask.add(SIGTERM);
         mask.add(SIGCHLD);
 
-        let econfig = im.get_epoll_config();
+        let econfig = run.get_epoll_config();
 
         // add the set of signals to the signal mask
         // of the main thread
@@ -57,7 +56,7 @@ impl<'p, L, I> Prop<'p, L, I>
 
         let parentpid = unistd::getpid();
 
-        let mut main = im.setup(mask, p).unwrap();
+        let mut main = run.setup(mask, p).unwrap();
 
         match unistd::fork() {
             Ok(unistd::ForkResult::Parent { child, .. }) => {
@@ -84,8 +83,7 @@ impl<'p, L, I> Prop<'p, L, I>
                 sigfd: sigfd,
                 lb: lb,
                 parentpid: parentpid,
-                im: im,
-                _marker: ::std::marker::PhantomData {},
+                run: run,
             }
         }));
 
@@ -105,29 +103,26 @@ impl<'p, L, I> Prop<'p, L, I>
     }
 }
 
-impl<'p, L, I> Drop for Prop<'p, L, I>
-    where L: LoggingBackend<'p> + 'p,
-          I: Run + 'p
-{
+impl<L, I> Drop for Prop<L, I> {
     fn drop(&mut self) {
         // signalfd is closed by the SignalFd struct
         // and epfd is closed by EpollFd
     }
 }
 
-impl<'p, L, I> Handler<'p> for Prop<'p, L, I>
-    where L: LoggingBackend<'p> + 'p,
-          I: Run + 'p
+impl<L, R> Handler for Prop<L, R>
+    where L: LoggingBackend,
+          R: Run
 {
     type In = EpollEvent;
     type Out = ();
 
-    fn reset(&'p mut self) {
+    fn reset(&mut self) {
         self.lb.reset();
     }
 
     // TODO should take sig handler
-    fn ready(&'p mut self, ev: EpollEvent) -> Option<()> {
+    fn ready(&mut self, ev: EpollEvent) -> Option<()> {
         trace!("ready(): {:?}: {:?}", ev.data, ev.events);
         if ev.data == self.sigfd.as_raw_fd() as u64 {
             match self.sigfd.read_signal() {
@@ -142,7 +137,7 @@ impl<'p, L, I> Handler<'p> for Prop<'p, L, I>
                           sig.ssi_signo,
                           self.parentpid);
                     // terminate child processes
-                    self.im.stop();
+                    self.run.stop();
                     signal::kill(self.parentpid, signal::Signal::SIGKILL).unwrap();
                     // terminate server aux loop
                     Some(())
@@ -169,8 +164,8 @@ pub trait Run {
 
     fn stop(&self);
 
-    fn setup<'h, 'p: 'h, P: StaticProtocol<'h, 'p, EpollEvent, ()>>(&'h mut self,
-                                                                    mask: SigSet,
-                                                                    protocol: &'p mut P)
-                                                                    -> Result<Epoll<P::H>>;
+    fn setup<'p, P: StaticProtocol<'p, EpollEvent, ()>>(&mut self,
+                                                        mask: SigSet,
+                                                        protocol: &'p P)
+                                                        -> Result<Epoll<P::H>>;
 }

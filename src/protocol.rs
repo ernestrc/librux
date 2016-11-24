@@ -14,16 +14,12 @@ pub enum Position<P> {
     Handler(P),
 }
 
-pub trait StaticProtocol<'h, 'proto: 'h, In, Out>
+pub trait StaticProtocol<'proto, In, Out>
     where Self: MuxProtocol
 {
-    type H: Handler<'h, In = In, Out = Out>;
+    type H: Handler<In = In, Out = Out>;
 
-    fn get_handler(&'proto mut self,
-                   p: Position<Self::Protocol>,
-                   epfd: EpollFd,
-                   id: usize)
-                   -> Self::H;
+    fn get_handler(&'proto self, p: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Self::H;
 }
 
 pub trait MuxProtocol
@@ -71,13 +67,13 @@ mod tests {
         on_writable: bool,
     }
 
-    impl<'h> Handler<'h> for TestHandler {
+    impl Handler for TestHandler {
         type In = EpollEvent;
         type Out = ();
 
         fn reset(&mut self) {}
 
-        fn ready(&'h mut self, e: EpollEvent) -> Option<()> {
+        fn ready(&mut self, e: EpollEvent) -> Option<()> {
             let kind = e.events;
 
             if kind.contains(EPOLLERR) {
@@ -104,10 +100,10 @@ mod tests {
         type Protocol = usize;
     }
 
-    impl<'h, 'p: 'h> StaticProtocol<'h, 'p, EpollEvent, ()> for TestMuxProtocol {
+    impl<'p> StaticProtocol<'p, EpollEvent, ()> for TestMuxProtocol {
         type H = TestHandler;
 
-        fn get_handler(&'p mut self, _: Position<usize>, _: EpollFd, _: usize) -> TestHandler {
+        fn get_handler(&'p self, _: Position<usize>, _: EpollFd, _: usize) -> TestHandler {
             TestHandler {
                 on_close: false,
                 on_error: false,

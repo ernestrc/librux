@@ -109,10 +109,10 @@ impl Run for Server {
         self.epoll_config
     }
 
-    fn setup<'h, 'p: 'h, P: StaticProtocol<'h, 'p, EpollEvent, ()>>(&'h mut self,
-                                                                    mask: SigSet,
-                                                                    protocol: &'p mut P)
-                                                                    -> Result<Epoll<P::H>> {
+    fn setup<'p, P: StaticProtocol<'p, EpollEvent, ()>>(&mut self,
+                                                        mask: SigSet,
+                                                        protocol: &'p P)
+                                                        -> Result<Epoll<P::H>> {
         trace!("bind()");
 
         try!(eintr!(bind, "bind", self.srvfd, &self.sockaddr));

@@ -25,9 +25,7 @@ pub struct EpollConfig {
     pub buffer_size: usize,
 }
 
-pub struct Epoll<H>
-    where for<'e> H: Handler<'e, In = EpollEvent>
-{
+pub struct Epoll<H> {
     pub epfd: EpollFd,
     handler: H,
     loop_ms: isize,
@@ -39,8 +37,7 @@ pub struct EpollFd {
     pub fd: RawFd,
 }
 
-impl<H> Epoll<H>
-    where for<'e> H: Handler<'e, In = EpollEvent>
+impl<H: Handler<In = EpollEvent>> Epoll<H>
 {
     pub fn from_fd(epfd: EpollFd, handler: H, config: EpollConfig) -> Epoll<H> {
         Epoll {
@@ -48,7 +45,6 @@ impl<H> Epoll<H>
             loop_ms: config.loop_ms,
             handler: handler,
             buf: Vec::with_capacity(config.buffer_size),
-            _marker: ::std::marker::PhantomData {},
         }
     }
 
@@ -89,9 +85,7 @@ impl<H> Epoll<H>
     }
 }
 
-impl<H> Drop for Epoll<H>
-    where for<'e> H: Handler<'e, In = EpollEvent>
-{
+impl<H> Drop for Epoll<H> {
     fn drop(&mut self) {
         let _ = unistd::close(self.epfd.fd);
     }
@@ -166,7 +160,7 @@ mod tests {
         tx: Sender<EpollEvent>,
     }
 
-    impl<'h> Handler<'h> for ChannelHandler {
+    impl Handler for ChannelHandler {
         type In = EpollEvent;
         type Out = ();
         fn reset(&mut self) {}
