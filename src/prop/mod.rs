@@ -12,21 +12,21 @@ use protocol::*;
 
 pub mod server;
 
-pub struct Prop<'p, L: LoggingBackend, P: StaticProtocol<'p, EpollEvent, ()>, I: Run<'p, P>> {
+pub struct Prop<'p, L: LoggingBackend<'p> + 'p, I: Run + 'p> {
     sigfd: SignalFd,
     lb: L,
     parentpid: i32,
     im: I,
     _marker: ::std::marker::PhantomData<&'p bool>,
-    _marker2: ::std::marker::PhantomData<P>,
 }
 
-impl<'p, L, P, I> Prop<'p, L, P, I>
-    where L: LoggingBackend,
-          P: StaticProtocol<'p, EpollEvent, ()>,
-          I: Run<'p, P>
+impl<'p, L, I> Prop<'p, L, I>
+    where L: LoggingBackend<'p> + 'p,
+          I: Run + 'p
 {
-    pub fn create(mut im: I, lb: L, p: &'p P) -> Result<()> {
+    pub fn create<P>(im: I, lb: L, p: &'p mut P) -> Result<()>
+        where P: StaticProtocol<'p, 'p, EpollEvent, ()>
+    {
 
         trace!("bind()");
 
@@ -80,14 +80,12 @@ impl<'p, L, P, I> Prop<'p, L, P, I>
         };
 
         let mut aux = try!(Epoll::new_with(econfig, |epfd| {
-
             Prop {
                 sigfd: sigfd,
                 lb: lb,
                 parentpid: parentpid,
                 im: im,
                 _marker: ::std::marker::PhantomData {},
-                _marker2: ::std::marker::PhantomData {},
             }
         }));
 
@@ -107,10 +105,9 @@ impl<'p, L, P, I> Prop<'p, L, P, I>
     }
 }
 
-impl<'p, L, P, I> Drop for Prop<'p, L, P, I>
-    where L: LoggingBackend,
-          P: StaticProtocol<'p, EpollEvent, ()>,
-          I: Run<'p, P>
+impl<'p, L, I> Drop for Prop<'p, L, I>
+    where L: LoggingBackend<'p> + 'p,
+          I: Run + 'p
 {
     fn drop(&mut self) {
         // signalfd is closed by the SignalFd struct
@@ -118,20 +115,19 @@ impl<'p, L, P, I> Drop for Prop<'p, L, P, I>
     }
 }
 
-impl<'p, L, P, I> Handler for Prop<'p, L, P, I>
-    where L: LoggingBackend,
-          P: StaticProtocol<'p, EpollEvent, ()>,
-          I: Run<'p, P>
+impl<'p, L, I> Handler<'p> for Prop<'p, L, I>
+    where L: LoggingBackend<'p> + 'p,
+          I: Run + 'p
 {
     type In = EpollEvent;
     type Out = ();
 
-    fn reset(&mut self) {
+    fn reset(&'p mut self) {
         self.lb.reset();
     }
 
     // TODO should take sig handler
-    fn ready(&mut self, ev: EpollEvent) -> Option<()> {
+    fn ready(&'p mut self, ev: EpollEvent) -> Option<()> {
         trace!("ready(): {:?}: {:?}", ev.data, ev.events);
         if ev.data == self.sigfd.as_raw_fd() as u64 {
             match self.sigfd.read_signal() {
@@ -168,10 +164,13 @@ impl<'p, L, P, I> Handler for Prop<'p, L, P, I>
 }
 
 
-pub trait Run<'p, P: StaticProtocol<'p, EpollEvent, ()>> {
+pub trait Run {
     fn get_epoll_config(&self) -> EpollConfig;
 
     fn stop(&self);
 
-    fn setup(&mut self, mask: SigSet, protocol: &'p P) -> Result<Epoll<P::H>>;
+    fn setup<'h, 'p: 'h, P: StaticProtocol<'h, 'p, EpollEvent, ()>>(&'h mut self,
+                                                                    mask: SigSet,
+                                                                    protocol: &'p mut P)
+                                                                    -> Result<Epoll<P::H>>;
 }

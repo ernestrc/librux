@@ -104,14 +104,15 @@ impl Server {
     }
 }
 
-impl<'p, P> Run<'p, P> for Server
-    where P: StaticProtocol<'p, EpollEvent, ()>
-{
+impl Run for Server {
     fn get_epoll_config(&self) -> EpollConfig {
         self.epoll_config
     }
 
-    fn setup(&mut self, mask: SigSet, protocol: &'p P) -> Result<Epoll<P::H>> {
+    fn setup<'h, 'p: 'h, P: StaticProtocol<'h, 'p, EpollEvent, ()>>(&'h mut self,
+                                                                    mask: SigSet,
+                                                                    protocol: &'p mut P)
+                                                                    -> Result<Epoll<P::H>> {
         trace!("bind()");
 
         try!(eintr!(bind, "bind", self.srvfd, &self.sockaddr));
@@ -196,7 +197,6 @@ impl<'p, P> Run<'p, P> for Server
         self.shutdown();
     }
 }
-
 
 impl Drop for Server {
     fn drop(&mut self) {

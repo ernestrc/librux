@@ -11,25 +11,25 @@ pub enum Action<P: MuxProtocol> {
 
 pub enum Position<P> {
     Root,
-    Handler(P)
+    Handler(P),
 }
 
-pub trait StaticProtocol<'proto, In, Out>
-    where Self: MuxProtocol + 'proto
+pub trait StaticProtocol<'h, 'proto: 'h, In, Out>
+    where Self: MuxProtocol
 {
-    type H: Handler<In=In, Out=Out>;
+    type H: Handler<'h, In = In, Out = Out>;
 
-    fn get_handler(&'proto self, of: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Self::H;
+    fn get_handler(&'proto mut self,
+                   p: Position<Self::Protocol>,
+                   epfd: EpollFd,
+                   id: usize)
+                   -> Self::H;
 }
 
-// TODO add get_handler with From<Handler> Into<Handler>
 pub trait MuxProtocol
     where Self: Sized
 {
     type Protocol: From<usize> + Into<usize>;
-    // type H: From<Handler<In=In, Out=Out>>;
-
-    // fn get_handler(&self, of: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Self::H;
 
     fn encode(&self, action: Action<Self>) -> u64 {
         match action {
@@ -71,15 +71,13 @@ mod tests {
         on_writable: bool,
     }
 
-    impl Handler for TestHandler {
+    impl<'h> Handler<'h> for TestHandler {
         type In = EpollEvent;
         type Out = ();
 
-        fn reset(&mut self) {
+        fn reset(&mut self) {}
 
-        }
-
-        fn ready(&mut self, e: EpollEvent) -> Option<()> {
+        fn ready(&'h mut self, e: EpollEvent) -> Option<()> {
             let kind = e.events;
 
             if kind.contains(EPOLLERR) {
@@ -106,10 +104,10 @@ mod tests {
         type Protocol = usize;
     }
 
-    impl <'p> StaticProtocol<'p, EpollEvent, ()> for TestMuxProtocol {
+    impl<'h, 'p: 'h> StaticProtocol<'h, 'p, EpollEvent, ()> for TestMuxProtocol {
         type H = TestHandler;
 
-        fn get_handler(&self, _: Position<usize>, _: EpollFd, _: usize) -> TestHandler {
+        fn get_handler(&'p mut self, _: Position<usize>, _: EpollFd, _: usize) -> TestHandler {
             TestHandler {
                 on_close: false,
                 on_error: false,

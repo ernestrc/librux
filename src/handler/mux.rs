@@ -23,15 +23,19 @@ impl MuxEvent {
     }
 }
 
-pub struct SSyncMux<'p, P: StaticProtocol<'p, MuxEvent, ()>> {
+pub struct SSyncMux<'h, 'p: 'h, P: StaticProtocol<'h, 'p, MuxEvent, ()> + 'p> {
     epfd: EpollFd,
     buffers: Vec<ByteBuffer>,
     handlers: Slab<P::H, usize>,
     protocol: &'p P,
 }
 
-impl<'p, P: StaticProtocol<'p, MuxEvent, ()>> SSyncMux<'p, P> {
-    pub fn new(buffer_size: usize, max_handlers: usize, epfd: EpollFd, protocol: &'p P) -> SSyncMux<'p, P> {
+impl<'h, 'p: 'h, P: StaticProtocol<'h, 'p, MuxEvent, ()>> SSyncMux<'h, 'p, P> {
+    pub fn new(buffer_size: usize,
+               max_handlers: usize,
+               epfd: EpollFd,
+               protocol: &'p P)
+               -> SSyncMux<'h, 'p, P> {
         SSyncMux {
             epfd: epfd,
             buffers: vec!(ByteBuffer::with_capacity(buffer_size); max_handlers),
@@ -84,7 +88,8 @@ impl<'p, P: StaticProtocol<'p, MuxEvent, ()>> SSyncMux<'p, P> {
 
         match protocol.decode(event.data) {
             Action::New(proto, clifd) => {
-                let (idx, fd) = Self::new_handler(protocol, Position::Handler(proto), clifd, epfd, handlers)?;
+                let (idx, fd) =
+                    Self::new_handler(protocol, Position::Handler(proto), clifd, epfd, handlers)?;
                 Ok(Some((idx, fd)))
             }
             Action::Notify(i, fd) => Ok(Some((i, fd))),
@@ -104,8 +109,8 @@ impl<'p, P: StaticProtocol<'p, MuxEvent, ()>> SSyncMux<'p, P> {
     }
 }
 
-impl<'p, P> Handler for SSyncMux<'p, P>
-    where P: StaticProtocol<'p, MuxEvent, ()>
+impl<'h, 'p: 'h, 'r: 'h, P> Handler<'r> for SSyncMux<'h, 'p, P>
+    where P: StaticProtocol<'h, 'p, MuxEvent, ()>
 {
     type In = EpollEvent;
     type Out = ();
@@ -114,7 +119,7 @@ impl<'p, P> Handler for SSyncMux<'p, P>
         self.handlers.clear()
     }
 
-    fn ready(&mut self, event: EpollEvent) -> Option<()> {
+    fn ready(&'r mut self, event: EpollEvent) -> Option<()> {
 
         let (idx, fd) =
             match SSyncMux::decode(self.protocol, &self.epfd, event, &mut self.handlers) {

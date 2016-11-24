@@ -7,7 +7,8 @@ use nix::unistd;
 use error::Result;
 use handler::Handler;
 
-pub use nix::sys::epoll::{epoll_create, EpollEvent, EpollEventKind, EPOLLIN, EPOLLOUT, EPOLLERR, EPOLLHUP, EPOLLET, EPOLLONESHOT, EPOLLRDHUP, EPOLLEXCLUSIVE, EPOLLWAKEUP};
+pub use nix::sys::epoll::{epoll_create, EpollEvent, EpollEventKind, EPOLLIN, EPOLLOUT, EPOLLERR,
+                          EPOLLHUP, EPOLLET, EPOLLONESHOT, EPOLLRDHUP, EPOLLEXCLUSIVE, EPOLLWAKEUP};
 
 lazy_static! {
     static ref NO_INTEREST: EpollEvent = {
@@ -24,7 +25,9 @@ pub struct EpollConfig {
     pub buffer_size: usize,
 }
 
-pub struct Epoll<H: Handler<In=EpollEvent>> {
+pub struct Epoll<H>
+    where for<'e> H: Handler<'e, In = EpollEvent>
+{
     pub epfd: EpollFd,
     handler: H,
     loop_ms: isize,
@@ -36,13 +39,16 @@ pub struct EpollFd {
     pub fd: RawFd,
 }
 
-impl<H: Handler<In=EpollEvent>> Epoll<H> {
+impl<H> Epoll<H>
+    where for<'e> H: Handler<'e, In = EpollEvent>
+{
     pub fn from_fd(epfd: EpollFd, handler: H, config: EpollConfig) -> Epoll<H> {
         Epoll {
             epfd: epfd,
             loop_ms: config.loop_ms,
             handler: handler,
             buf: Vec::with_capacity(config.buffer_size),
+            _marker: ::std::marker::PhantomData {},
         }
     }
 
@@ -78,11 +84,14 @@ impl<H: Handler<In=EpollEvent>> Epoll<H> {
     }
 
     pub fn run(&mut self) {
-        while !self.run_once() { }
+        while !self.run_once() {
+        }
     }
 }
 
-impl<H: Handler<In=EpollEvent>> Drop for Epoll<H> {
+impl<H> Drop for Epoll<H>
+    where for<'e> H: Handler<'e, In = EpollEvent>
+{
     fn drop(&mut self) {
         let _ = unistd::close(self.epfd.fd);
     }
@@ -157,7 +166,7 @@ mod tests {
         tx: Sender<EpollEvent>,
     }
 
-    impl Handler for ChannelHandler {
+    impl<'h> Handler<'h> for ChannelHandler {
         type In = EpollEvent;
         type Out = ();
         fn reset(&mut self) {}

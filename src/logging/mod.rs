@@ -7,13 +7,13 @@ use poll::*;
 
 /// TODO: provide debug/warn/info/... macro implementations with thread_local!
 /// Logging Handler
-pub trait LoggingBackend
-    where Self: Handler<In=EpollEvent, Out=()> + 'static
+pub trait LoggingBackend<'l>
+    where Self: Handler<'l, In = EpollEvent, Out = ()>
 {
-    fn level(&self) -> LogLevel;
+    fn level(&'l self) -> LogLevel;
 
     // TODO should pass pipe buffer to communicate with aux event loop
-    fn setup(&self, epfd: &EpollFd) -> Result<Box<Log>>;
+    fn setup(&'l self, epfd: &EpollFd) -> Result<Box<Log>>;
 }
 
 pub struct SimpleLogging {
@@ -112,7 +112,7 @@ impl Log for TracingLogger {
 }
 
 
-impl LoggingBackend for SimpleLogging {
+impl<'l> LoggingBackend<'l> for SimpleLogging {
     fn level(&self) -> LogLevel {
         self.level
     }
@@ -127,11 +127,11 @@ impl LoggingBackend for SimpleLogging {
     }
 }
 
-impl Handler for SimpleLogging {
+impl<'h> Handler<'h> for SimpleLogging {
     type In = EpollEvent;
     type Out = ();
 
-    fn reset(&mut self) { }
+    fn reset(&mut self) {}
 
     fn ready(&mut self, _: EpollEvent) -> Option<()> {
         // let dst = &mut self.buf[self.pos..self.limit];
