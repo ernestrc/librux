@@ -28,7 +28,7 @@ pad = "*"
 env_logger = "*"
 log = "0.3.6"
 
-[profile.release]
-opt-level = 3
-debug = true
-lto = false
+#[profile.release]
+#opt-level = 3
+#debug = true
+#lto = false

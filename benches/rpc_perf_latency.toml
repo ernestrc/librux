@@ -5,8 +5,8 @@
 [general]
 threads = 4
 connections = 100
-duration = 10
-windows = 1
+duration = 20
+windows = 5
 protocol = "echo"
 tcp-nodelay = false
 ipv4 = true

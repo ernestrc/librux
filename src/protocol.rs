@@ -69,11 +69,9 @@ mod tests {
 
     impl Handler for TestHandler {
         type In = EpollEvent;
-        type Out = ();
+        type Out = EpollCmd;
 
-        fn reset(&mut self) {}
-
-        fn ready(&mut self, e: EpollEvent) -> Option<()> {
+        fn ready(&mut self, e: EpollEvent) -> EpollCmd {
             let kind = e.events;
 
             if kind.contains(EPOLLERR) {
@@ -92,7 +90,7 @@ mod tests {
                 self.on_close = true;
             }
 
-            None
+            EpollCmd::Poll
         }
     }
 
@@ -100,7 +98,7 @@ mod tests {
         type Protocol = usize;
     }
 
-    impl<'p> StaticProtocol<'p, EpollEvent, ()> for TestMuxProtocol {
+    impl<'p> StaticProtocol<'p, EpollEvent, EpollCmd> for TestMuxProtocol {
         type H = TestHandler;
 
         fn get_handler(&'p self, _: Position<usize>, _: EpollFd, _: usize) -> TestHandler {

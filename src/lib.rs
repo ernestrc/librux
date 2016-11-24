@@ -87,7 +87,6 @@ pub mod protocol;
 pub mod poll;
 pub mod buf;
 pub mod prop;
-pub mod logging;
 
 use std::os::unix::io::RawFd;
 

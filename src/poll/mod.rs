@@ -37,8 +37,12 @@ pub struct EpollFd {
     pub fd: RawFd,
 }
 
-impl<H: Handler<In = EpollEvent>> Epoll<H>
-{
+pub enum EpollCmd {
+    Shutdown,
+    Poll,
+}
+
+impl<H: Handler<In = EpollEvent, Out = EpollCmd>> Epoll<H> {
     pub fn from_fd(epfd: EpollFd, handler: H, config: EpollConfig) -> Epoll<H> {
         Epoll {
             epfd: epfd,
@@ -62,25 +66,21 @@ impl<H: Handler<In = EpollEvent>> Epoll<H>
     }
 
     #[inline]
-    fn run_once(&mut self) -> bool {
+    pub fn run(&mut self) {
+        loop {
+            let dst = unsafe {
+                ::std::slice::from_raw_parts_mut(self.buf.as_mut_ptr(), self.buf.capacity())
+            };
+            let cnt = epoll_wait(self.epfd.fd, dst, self.loop_ms).unwrap();
+            unsafe { self.buf.set_len(cnt) }
 
-        let dst =
-            unsafe { ::std::slice::from_raw_parts_mut(self.buf.as_mut_ptr(), self.buf.capacity()) };
-        let cnt = epoll_wait(self.epfd.fd, dst, self.loop_ms).unwrap();
-        unsafe { self.buf.set_len(cnt) }
-
-        {
-            for ev in self.buf.iter() {
-                if let Some(_) = self.handler.ready(*ev) {
-                    return true;
+            {
+                for ev in self.buf.iter() {
+                    if let EpollCmd::Shutdown = self.handler.ready(*ev) {
+                        return;
+                    }
                 }
             }
-        }
-        false
-    }
-
-    pub fn run(&mut self) {
-        while !self.run_once() {
         }
     }
 }
@@ -162,14 +162,13 @@ mod tests {
 
     impl Handler for ChannelHandler {
         type In = EpollEvent;
-        type Out = ();
-        fn reset(&mut self) {}
-        fn ready(&mut self, events: EpollEvent) -> Option<()> {
+        type Out = EpollCmd;
+        fn ready(&mut self, events: EpollEvent) -> EpollCmd {
             if self.tx.send(events).is_ok() {
-                return Some(());
+                return EpollCmd::Shutdown;
             }
 
-            None
+            EpollCmd::Poll
         }
     }
 

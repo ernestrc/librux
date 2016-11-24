@@ -6,18 +6,17 @@ extern crate env_logger;
 
 use rux::{read, send as rsend, close};
 use rux::handler::*;
-use rux::prop::Prop;
-use rux::logging::SimpleLogging;
 use rux::protocol::*;
 use rux::poll::*;
 use rux::error::*;
 use rux::sys::socket::*;
 use rux::prop::server::*;
-use rux::handler::mux::{SSyncMux, MuxEvent};
+use rux::handler::mux::{SyncMux, MuxEvent, MuxCmd};
+use rux::prop::system::System;
 
 const BUF_SIZE: usize = 1024;
 const EPOLL_BUF_SIZE: usize = 100;
-const EPOLL_LOOP_MS: isize = -1;
+const EPOLL_LOOP_MS: isize = 100;
 const MAX_CONN: usize = 24 * 1024;
 
 /// Handler that echoes incoming bytes
@@ -27,11 +26,9 @@ pub struct EchoHandler;
 
 impl Handler for EchoHandler {
     type In = MuxEvent;
-    type Out = ();
+    type Out = MuxCmd;
 
-    fn reset(&mut self) {}
-
-    fn ready(&mut self, event: MuxEvent) -> Option<()> {
+    fn ready(&mut self, event: MuxEvent) -> MuxCmd {
 
         let fd = event.fd;
         let kind = event.kind;
@@ -40,7 +37,7 @@ impl Handler for EchoHandler {
         if kind.contains(EPOLLHUP) {
             trace!("socket's fd {}: EPOLLHUP", fd);
             perror!("close: {}", close(fd));
-            return Some(());
+            return MuxCmd::Clear;
         }
 
         if kind.contains(EPOLLERR) {
@@ -69,14 +66,14 @@ impl Handler for EchoHandler {
             }
         }
 
-        None
+        MuxCmd::Keep
     }
 }
 
 #[derive(Clone)]
 struct EchoProtocol;
 
-impl<'p> StaticProtocol<'p, MuxEvent, ()> for EchoProtocol {
+impl<'p> StaticProtocol<'p, MuxEvent, MuxCmd> for EchoProtocol {
     type H = EchoHandler;
 
     fn get_handler(&self, _: Position<usize>, _: EpollFd, _: usize) -> EchoHandler {
@@ -84,15 +81,17 @@ impl<'p> StaticProtocol<'p, MuxEvent, ()> for EchoProtocol {
     }
 }
 
-impl<'p> StaticProtocol<'p, EpollEvent, ()> for EchoProtocol {
-    type H = SSyncMux<'p, EchoProtocol>;
+impl<'p> StaticProtocol<'p, EpollEvent, EpollCmd> for EchoProtocol {
+    type H = SyncMux<'p, EchoProtocol>;
 
     fn get_handler(&'p self,
                    _: Position<usize>,
                    epfd: EpollFd,
                    _: usize)
-                   -> SSyncMux<'p, EchoProtocol> {
-        SSyncMux::new(BUF_SIZE, MAX_CONN, epfd, &self)
+                   -> SyncMux<'p, EchoProtocol> {
+
+        let interests = EPOLLIN | EPOLLOUT | EPOLLET;
+        SyncMux::new(BUF_SIZE, MAX_CONN, interests, epfd, &self)
     }
 }
 
@@ -104,7 +103,7 @@ fn main() {
 
     ::env_logger::init().unwrap();
 
-    let config = ServerConfig::new(("127.0.0.1", 10017))
+    let config = ServerConfig::new(("127.0.0.1", 10002))
         .unwrap()
         .io_threads(4)
         .epoll_config(EpollConfig {
@@ -112,8 +111,7 @@ fn main() {
             buffer_size: EPOLL_BUF_SIZE,
         });
 
-    let logging = SimpleLogging::new(::log::LogLevel::Trace);
     let protocol = EchoProtocol;
 
-    Prop::create(Server::new(config).unwrap(), logging, &protocol).unwrap();
+    System::build(Server::new(config).unwrap()).start(&protocol).unwrap();
 }

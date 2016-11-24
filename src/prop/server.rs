@@ -10,9 +10,9 @@ use nix::sched;
 use error::*;
 use poll::*;
 use protocol::*;
-use prop::Run;
+use prop::Prop;
 
-/// Server implementation that creates one AF_INET/SOCK_STREAM socket and uses it to bind/listen
+/// Prop implementation that creates one AF_INET/SOCK_STREAM socket and uses it to bind/listen
 /// at the specified address. It will create one handler/epoll instance per `io_thread` plus one for the main thread.
 pub struct Server {
     srvfd: RawFd,
@@ -104,15 +104,14 @@ impl Server {
     }
 }
 
-impl Run for Server {
+impl Prop for Server {
     fn get_epoll_config(&self) -> EpollConfig {
         self.epoll_config
     }
 
-    fn setup<'p, P: StaticProtocol<'p, EpollEvent, ()>>(&mut self,
-                                                        mask: SigSet,
-                                                        protocol: &'p P)
-                                                        -> Result<Epoll<P::H>> {
+    fn setup<'p, P>(&mut self, mask: SigSet, protocol: &'p P) -> Result<Epoll<P::H>>
+        where P: StaticProtocol<'p, EpollEvent, EpollCmd>
+    {
         trace!("bind()");
 
         try!(eintr!(bind, "bind", self.srvfd, &self.sockaddr));
