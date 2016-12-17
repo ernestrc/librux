@@ -80,6 +80,10 @@ impl ServerConfig {
         ServerConfig { max_conn: max_conn, ..self }
     }
 
+    pub fn sockflag(self, sockflag: SockFlag) -> ServerConfig {
+        ServerConfig { sockflag: sockflag, ..self }
+    }
+
     pub fn io_threads(self, io_threads: usize) -> ServerConfig {
         assert!(io_threads > 0, "I/O threads must be greater than 0");
         ServerConfig { io_threads: io_threads, ..self }

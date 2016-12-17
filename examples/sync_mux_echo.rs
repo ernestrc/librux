@@ -99,6 +99,7 @@ fn main() {
     let config = ServerConfig::tcp(("127.0.0.1", 10001))
         .unwrap()
         .max_conn(MAX_CONN)
+        .sockflag(SockFlag::empty())
         .io_threads(1)
         .epoll_config(EpollConfig {
             loop_ms: EPOLL_LOOP_MS,

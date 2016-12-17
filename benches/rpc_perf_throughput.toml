@@ -4,7 +4,7 @@
 
 [general]
 threads = 4
-connections = 100
+connections = 50
 duration = 10
 windows = 1
 protocol = "echo"
