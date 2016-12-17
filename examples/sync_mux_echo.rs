@@ -82,7 +82,7 @@ impl<'p> StaticProtocol<'p, MuxEvent, MuxCmd> for EchoProtocol {
     }
 }
 
-impl<'p> MuxProtocol for EchoProtocol {
+impl MuxProtocol for EchoProtocol {
     type Protocol = usize;
 }
 
@@ -99,7 +99,6 @@ fn main() {
     let config = ServerConfig::tcp(("127.0.0.1", 10001))
         .unwrap()
         .max_conn(MAX_CONN)
-        .sockflag(SockFlag::empty())
         .io_threads(1)
         .epoll_config(EpollConfig {
             loop_ms: EPOLL_LOOP_MS,
@@ -108,8 +107,6 @@ fn main() {
 
     let protocol = EchoProtocol { buffers: vec!(ByteBuffer::with_capacity(BUF_SIZE); MAX_CONN) };
 
-
-
     let server = Server::new_with(config, |epfd| {
             SyncMux::new(MAX_CONN,
                          EPOLLIN | EPOLLOUT | EPOLLET | EPOLLRDHUP,
@@ -117,7 +114,6 @@ fn main() {
                          protocol)
         })
         .unwrap();
-
 
     System::build(server).start().unwrap();
 }

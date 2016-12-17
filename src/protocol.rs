@@ -75,6 +75,8 @@ mod tests {
         type In = EpollEvent;
         type Out = EpollCmd;
 
+        fn update(&mut self, _: EpollFd) {}
+
         fn ready(&mut self, e: EpollEvent) -> EpollCmd {
             let kind = e.events;
 
@@ -102,7 +104,7 @@ mod tests {
         type Protocol = usize;
     }
 
-    impl<'p> StaticProtocol<EpollEvent, EpollCmd> for TestMuxProtocol {
+    impl<'p> StaticProtocol<'p, EpollEvent, EpollCmd> for TestMuxProtocol {
         type H = TestHandler;
         fn done(&mut self, handler: Self::H, index: usize) {}
 
