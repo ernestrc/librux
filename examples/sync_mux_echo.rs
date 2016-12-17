@@ -67,7 +67,7 @@ impl<'p> Handler for EchoHandler<'p> {
 
 #[derive(Clone, Debug)]
 struct EchoProtocol {
-    buffers: Vec<ByteBuffer>
+    buffers: Vec<ByteBuffer>,
 }
 
 impl<'p> StaticProtocol<'p, MuxEvent, MuxCmd> for EchoProtocol {
@@ -96,7 +96,7 @@ fn main() {
           EPOLL_LOOP_MS,
           MAX_CONN);
 
-    let config = ServerConfig::new(("127.0.0.1", 10001))
+    let config = ServerConfig::tcp(("127.0.0.1", 10001))
         .unwrap()
         .max_conn(MAX_CONN)
         .io_threads(1)
@@ -105,14 +105,16 @@ fn main() {
             buffer_size: EPOLL_BUF_SIZE,
         });
 
-    let protocol = EchoProtocol {
-        buffers: vec!(ByteBuffer::with_capacity(BUF_SIZE); MAX_CONN)
-    };
+    let protocol = EchoProtocol { buffers: vec!(ByteBuffer::with_capacity(BUF_SIZE); MAX_CONN) };
 
-    let interests = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLRDHUP;
 
-    let server = Server::new_with(config,
-                                  |epfd| SyncMux::new(MAX_CONN, interests, epfd, protocol))
+
+    let server = Server::new_with(config, |epfd| {
+            SyncMux::new(MAX_CONN,
+                         EPOLLIN | EPOLLOUT | EPOLLET | EPOLLRDHUP,
+                         epfd,
+                         protocol)
+        })
         .unwrap();
 
 

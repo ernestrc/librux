@@ -1,6 +1,7 @@
 use std::net::ToSocketAddrs;
 use std::os::unix::io::RawFd;
 use std::thread;
+use std::net;
 
 use nix::sys::socket::*;
 use nix::sys::signalfd::SigSet;
@@ -14,13 +15,11 @@ use poll::*;
 use handler::Handler;
 use prop::Prop;
 
-/// Prop implementation that creates one AF_INET/SOCK_STREAM socket and uses it to bind/listen
-/// at the specified address. It will create one handler/epoll instance per `io_thread`.
 pub struct Server<H>
     where H: Handler<In = EpollEvent, Out = EpollCmd> + Send + Clone + 'static
 {
     srvfd: RawFd,
-    cepfd: EpollFd,
+    epfd: EpollFd,
     sockaddr: SockAddr,
     max_conn: usize,
     template: H,
@@ -31,14 +30,31 @@ pub struct Server<H>
 pub struct ServerConfig {
     max_conn: usize,
     io_threads: usize,
+    socktype: SockType,
     sockaddr: SockAddr,
+    sockflag: SockFlag,
+    sockproto: i32,
+    family: AddressFamily,
     epoll_config: EpollConfig,
 }
 
 impl ServerConfig {
-    pub fn new<A: ToSocketAddrs>(addr: A) -> Result<ServerConfig> {
-        let inet = try!(addr.to_socket_addrs().unwrap().next().ok_or("could not parse sockaddr"));
-        let sockaddr = SockAddr::Inet(InetAddr::from_std(&inet));
+    pub fn tcp<A: ToSocketAddrs>(addr: A) -> Result<ServerConfig> {
+        let (sockaddr, family) = inet(addr)?;
+        ServerConfig::new(sockaddr, SockType::Stream, family, SOCK_NONBLOCK, 0)
+    }
+
+    pub fn udp<A: ToSocketAddrs>(addr: A) -> Result<ServerConfig> {
+        let (sockaddr, family) = inet(addr)?;
+        ServerConfig::new(sockaddr, SockType::Datagram, family, SOCK_NONBLOCK, 0)
+    }
+
+    pub fn new(sockaddr: SockAddr,
+               socktype: SockType,
+               family: AddressFamily,
+               sockflag: SockFlag,
+               sockproto: i32)
+               -> Result<ServerConfig> {
 
         let cpus = ::num_cpus::get();
         let max_conn = 5000 * cpus;
@@ -50,6 +66,10 @@ impl ServerConfig {
 
         Ok(ServerConfig {
             sockaddr: sockaddr,
+            socktype: socktype,
+            sockflag: sockflag,
+            sockproto: sockproto,
+            family: family,
             max_conn: max_conn,
             io_threads: io_threads,
             epoll_config: Default::default(),
@@ -73,27 +93,32 @@ impl ServerConfig {
 impl<H> Server<H>
     where H: Handler<In = EpollEvent, Out = EpollCmd> + Send + Clone + 'static
 {
-    pub fn new_with<F>(config: ServerConfig, new_template: F) -> Result<Server<H>>
+    pub fn new_with<F>(config: ServerConfig, new_handler: F) -> Result<Server<H>>
         where F: FnOnce(EpollFd) -> H
     {
 
-        let ServerConfig { io_threads, max_conn, sockaddr, epoll_config } = config;
+        let ServerConfig { io_threads,
+                           max_conn,
+                           socktype,
+                           sockaddr,
+                           sockflag,
+                           sockproto,
+                           family,
+                           epoll_config } = config;
 
-        // create connections epoll
-        let fd = try!(epoll_create());
+        let fd = epoll_create()?;
 
-        let cepfd = EpollFd { fd: fd };
+        let epfd = EpollFd { fd: fd };
 
-        // create socket
-        let srvfd = try!(socket(AddressFamily::Inet, SockType::Stream, SOCK_NONBLOCK, 0)) as i32;
+        let srvfd = socket(family, socktype, sockflag, sockproto)? as i32;
 
         setsockopt(srvfd, sockopt::ReuseAddr, &true).unwrap();
 
         Ok(Server {
             sockaddr: sockaddr,
-            cepfd: cepfd,
+            epfd: epfd,
             srvfd: srvfd,
-            template: new_template(cepfd),
+            template: new_handler(epfd),
             max_conn: max_conn,
             io_threads: io_threads,
             epoll_config: epoll_config,
@@ -116,10 +141,10 @@ impl<H> Prop for Server<H>
 
     fn setup(&mut self, mask: SigSet) -> Result<Epoll<Self::Root>> {
 
-        try!(eintr!(bind, "bind", self.srvfd, &self.sockaddr));
+        eintr!(bind, "bind", self.srvfd, &self.sockaddr)?;
         info!("bind: fd {} to {}", self.srvfd, self.sockaddr);
 
-        try!(eintr!(listen, "listen", self.srvfd, self.max_conn));
+        eintr!(listen, "listen", self.srvfd, self.max_conn)?;
         info!("listen: fd {} with max connections: {}",
               self.srvfd,
               self.max_conn);
@@ -129,7 +154,7 @@ impl<H> Prop for Server<H>
             data: self.srvfd as u64,
         };
 
-        try!(self.cepfd.register(self.srvfd, &ceinfo));
+        self.epfd.register(self.srvfd, &ceinfo)?;
         debug!("registered main interest on {}", self.srvfd);
 
         let io_threads = self.io_threads;
@@ -138,9 +163,9 @@ impl<H> Prop for Server<H>
 
         for i in 1..io_threads {
 
-            let epfd = EpollFd::new(try!(epoll_create()));
+            let epfd = EpollFd::new(epoll_create()?);
 
-            // try!(epfd.register(srvfd, &ceinfo));
+            epfd.register(srvfd, &ceinfo)?;
             debug!("registered thread {} interest on {}", i, srvfd);
 
             let mut handler = self.template.clone();
@@ -167,7 +192,7 @@ impl<H> Prop for Server<H>
             });
         }
 
-        let epoll = Epoll::from_fd(self.cepfd, self.template.clone(), epoll_config);
+        let epoll = Epoll::from_fd(self.epfd, self.template.clone(), epoll_config);
 
         debug!("created {} I/O epoll instances", self.io_threads);
         info!("starting I/O thread 0 event loop");
@@ -194,4 +219,17 @@ impl<H> Drop for Server<H>
     fn drop(&mut self) {
         unistd::close(self.srvfd).unwrap();
     }
+}
+
+fn inet<A: ToSocketAddrs>(addr: A) -> Result<(SockAddr, AddressFamily)> {
+    let inet_addr_std = addr.to_socket_addrs().unwrap().next().ok_or("could not parse sockaddr")?;
+    let inet_addr = InetAddr::from_std(&inet_addr_std);
+    let sockaddr = SockAddr::Inet(inet_addr);
+
+    let family = match inet_addr_std {
+        net::SocketAddr::V4(_) => AddressFamily::Inet,
+        net::SocketAddr::V6(_) => AddressFamily::Inet6,
+    };
+
+    Ok((sockaddr, family))
 }

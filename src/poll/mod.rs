@@ -147,7 +147,7 @@ impl Default for EpollConfig {
     fn default() -> EpollConfig {
         EpollConfig {
             loop_ms: -1,
-            buffer_size: 100,
+            buffer_size: 256,
         }
     }
 }
