@@ -23,11 +23,11 @@ const MAX_CONN: usize = 2048;
 /// Handler that echoes incoming bytes
 ///
 /// For benchmarking I/O throuput and latency
-pub struct EchoHandler {
-    buffer: ByteBuffer,
+pub struct EchoHandler<'p> {
+    buffer: &'p mut ByteBuffer,
 }
 
-impl Handler for EchoHandler {
+impl<'p> Handler for EchoHandler<'p> {
     type In = MuxEvent;
     type Out = MuxCmd;
 
@@ -48,14 +48,14 @@ impl Handler for EchoHandler {
         }
 
         if kind.contains(EPOLLIN) {
-            if let Some(n) = read(fd, From::from(&mut self.buffer)).unwrap() {
+            if let Some(n) = read(fd, From::from(&mut *self.buffer)).unwrap() {
                 self.buffer.extend(n);
             }
         }
 
         if kind.contains(EPOLLOUT) {
             if self.buffer.is_readable() {
-                if let Some(cnt) = rsend(fd, From::from(&self.buffer), MSG_DONTWAIT).unwrap() {
+                if let Some(cnt) = rsend(fd, From::from(&*self.buffer), MSG_DONTWAIT).unwrap() {
                     self.buffer.consume(cnt);
                 }
             }
@@ -67,26 +67,22 @@ impl Handler for EchoHandler {
 
 #[derive(Clone, Debug)]
 struct EchoProtocol {
-    buffers: Vec<Option<ByteBuffer>>
+    buffers: Vec<ByteBuffer>
 }
 
-impl StaticProtocol<MuxEvent, MuxCmd> for EchoProtocol {
-    type H = EchoHandler;
+impl<'p> StaticProtocol<'p, MuxEvent, MuxCmd> for EchoProtocol {
+    type H = EchoHandler<'p>;
 
-    fn done(&mut self, handler: EchoHandler, index: usize) {
-        let EchoHandler { mut buffer } = handler;
-        buffer.clear();
-
-        self.buffers[index] = Some(buffer);
+    fn done(&mut self, handler: EchoHandler, _: usize) {
+        handler.buffer.clear();
     }
 
-    fn get_handler(&mut self, _: Position<usize>, _: EpollFd, index: usize) -> EchoHandler {
-        let buffer = self.buffers[index].take().unwrap();
-        EchoHandler { buffer: buffer }
+    fn get_handler(&'p mut self, _: Position<usize>, _: EpollFd, index: usize) -> EchoHandler<'p> {
+        EchoHandler { buffer: &mut self.buffers[index] }
     }
 }
 
-impl MuxProtocol for EchoProtocol {
+impl<'p> MuxProtocol for EchoProtocol {
     type Protocol = usize;
 }
 
@@ -109,15 +105,9 @@ fn main() {
             buffer_size: EPOLL_BUF_SIZE,
         });
 
-    let buffers = vec!(ByteBuffer::with_capacity(BUF_SIZE); MAX_CONN);
-
-    for buffer in buffers.iter() {
-        assert!(buffer.capacity() == BUF_SIZE);
-    }
-
-    assert!(buffers.len() == MAX_CONN);
-
-    let protocol = EchoProtocol { buffers: buffers.into_iter().map(|b| Some(b)).collect() };
+    let protocol = EchoProtocol {
+        buffers: vec!(ByteBuffer::with_capacity(BUF_SIZE); MAX_CONN)
+    };
 
     let interests = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLRDHUP;
 

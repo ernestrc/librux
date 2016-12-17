@@ -14,14 +14,14 @@ pub enum Position<P> {
     Handler(P),
 }
 
-pub trait StaticProtocol<In, Out>
-    where Self: MuxProtocol
+pub trait StaticProtocol<'p, In, Out>
+    where Self: MuxProtocol + 'p
 {
     type H: Handler<In = In, Out = Out>;
 
     fn done(&mut self, handler: Self::H, index: usize);
 
-    fn get_handler(&mut self, p: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Self::H;
+    fn get_handler(&'p mut self, p: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Self::H;
 }
 
 pub trait MuxProtocol

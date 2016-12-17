@@ -1,4 +1,5 @@
 use std::os::unix::io::RawFd;
+use std::mem;
 
 use nix::unistd::close as rclose;
 use nix::sys::socket::*;
@@ -19,14 +20,14 @@ pub enum MuxCmd {
     Keep,
 }
 
-pub struct SyncMux<P: StaticProtocol<MuxEvent, MuxCmd> + 'static> {
+pub struct SyncMux<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd> + 'static> {
     epfd: EpollFd,
     handlers: Slab<P::H, usize>,
     protocol: P,
     interests: EpollEventKind,
 }
 
-impl<P: StaticProtocol<MuxEvent, MuxCmd> + Clone> Clone for SyncMux<P> {
+impl<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd> + Clone> Clone for SyncMux<'p, P> {
     fn clone(&self) -> Self {
         SyncMux {
             epfd: self.epfd,
@@ -37,12 +38,12 @@ impl<P: StaticProtocol<MuxEvent, MuxCmd> + Clone> Clone for SyncMux<P> {
     }
 }
 
-impl<P: StaticProtocol<MuxEvent, MuxCmd>> SyncMux<P> {
+impl<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd>> SyncMux<'p, P> {
     pub fn new(max_handlers: usize,
                interests: EpollEventKind,
                epfd: EpollFd,
                protocol: P)
-               -> SyncMux<P> {
+               -> SyncMux<'p, P> {
         SyncMux {
             epfd: epfd,
             handlers: Slab::with_capacity(max_handlers),
@@ -52,7 +53,7 @@ impl<P: StaticProtocol<MuxEvent, MuxCmd>> SyncMux<P> {
     }
 
     #[inline(always)]
-    fn new_handler(protocol: &mut P,
+    fn new_handler(protocol: &'p mut P,
                    proto: Position<P::Protocol>,
                    clifd: RawFd,
                    interests: EpollEventKind,
@@ -63,15 +64,16 @@ impl<P: StaticProtocol<MuxEvent, MuxCmd>> SyncMux<P> {
             Some(entry) => {
 
                 let i = entry.index();
-                let h = protocol.get_handler(proto, *epfd, i);
-                entry.insert(h);
-
                 let action: Action<P> = Action::Notify(i, clifd);
 
                 let interest = EpollEvent {
                     events: interests,
                     data: protocol.encode(action),
                 };
+
+                let h = protocol.get_handler(proto, *epfd, i);
+
+                entry.insert(h);
 
                 match epfd.register(clifd, &interest) {
                     Ok(_) => {}
@@ -89,7 +91,7 @@ impl<P: StaticProtocol<MuxEvent, MuxCmd>> SyncMux<P> {
     }
 
     #[inline(always)]
-    fn decode(protocol: &mut P,
+    fn decode(protocol: &'p mut P,
               epfd: &EpollFd,
               event: EpollEvent,
               interests: EpollEventKind,
@@ -131,8 +133,8 @@ impl<P: StaticProtocol<MuxEvent, MuxCmd>> SyncMux<P> {
     }
 }
 
-impl<P> Handler for SyncMux<P>
-    where P: StaticProtocol<MuxEvent, MuxCmd>
+impl<'p, P> Handler for SyncMux<'p, P>
+    where P: StaticProtocol<'p, MuxEvent, MuxCmd>
 {
     type In = EpollEvent;
     type Out = EpollCmd;
@@ -143,7 +145,10 @@ impl<P> Handler for SyncMux<P>
 
     fn ready(&mut self, event: EpollEvent) -> EpollCmd {
 
-        let (idx, fd) = match SyncMux::decode(&mut self.protocol,
+        // FIXME: solve with associated lifetimes
+        let proto: &'p mut P = unsafe { mem::transmute(&mut self.protocol) };
+
+        let (idx, fd) = match SyncMux::decode(proto,
                                               &self.epfd,
                                               event,
                                               self.interests,
