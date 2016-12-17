@@ -1,15 +1,14 @@
 use std::os::unix::io::AsRawFd;
+use std::fmt;
 
 use nix::sys::signalfd::{SignalFd, SFD_NONBLOCK};
 use nix::unistd;
 
 pub use nix::sys::signal::{Signal, SigSet};
-use nix::sys::signal;
 
 use error::Result;
 use handler::*;
 use poll::*;
-use protocol::*;
 use prop::Prop;
 use prop::signals::DefaultSigHandler;
 
@@ -21,7 +20,7 @@ pub struct SystemBuilder<S, P> {
 
 impl<S, P> SystemBuilder<S, P>
     where S: Handler<In = Signal, Out = EpollCmd>,
-          P: Prop
+          P: Prop + Send + 'static
 {
     pub fn with_sig_handler(self, handler: S) -> SystemBuilder<S, P> {
         SystemBuilder { sig_h: handler, ..self }
@@ -31,22 +30,20 @@ impl<S, P> SystemBuilder<S, P>
         SystemBuilder { sig_mask: mask, ..self }
     }
 
-    pub fn start<'p, O>(self, protocol: &'p O) -> Result<()>
-        where O: StaticProtocol<'p, EpollEvent, EpollCmd>
+    pub fn start(self) -> Result<()>
     {
-        System::start(self.prop, self.sig_h, self.sig_mask, protocol)
+        System::start(self.prop, self.sig_h, self.sig_mask)
     }
 }
 
 pub struct System<S, P> {
-    parentpid: i32,
     sigfd: SignalFd,
     sig_h: S,
     prop: P,
 }
 
 impl<P> System<DefaultSigHandler, P>
-    where P: Prop,
+    where P: Prop
 {
     pub fn build(prop: P) -> SystemBuilder<DefaultSigHandler, P> {
         // default mask
@@ -62,12 +59,10 @@ impl<P> System<DefaultSigHandler, P>
 }
 
 impl<P, S> System<S, P>
-    where P: Prop,
+    where P: Prop + Send + 'static,
           S: Handler<In = Signal, Out = EpollCmd>
 {
-
-    pub fn start<'p, O>(mut prop: P, sig_h: S, mut sig_mask: SigSet, protocol: &'p O) -> Result<()>
-        where O: StaticProtocol<'p, EpollEvent, EpollCmd>
+    pub fn start(mut prop: P, sig_h: S, mut sig_mask: SigSet) -> Result<()>
     {
 
         sig_mask.add(Signal::SIGCHLD);
@@ -88,35 +83,19 @@ impl<P, S> System<S, P>
         //         log
         //     }).unwrap();
 
-        let parentpid = unistd::getpid();
+        let mut main = prop.setup(sig_mask).unwrap();
 
-        let mut main: Epoll<O::H> = prop.setup(sig_mask, protocol).unwrap();
-
-        match unistd::fork() {
-            Ok(unistd::ForkResult::Parent { child, .. }) => {
-                sig_mask.thread_block().unwrap();
-                debug!("{:?} created I/O child process n {} with pid {}",
-                       unistd::getpid(),
-                       0,
-                       child);
-                info!("{:?} starting main event loop", unistd::getpid());
-                // run impl's I/O event loop(s)
-                main.run();
-                return Err("terminated I/O child process".into());
-            }
-            Ok(unistd::ForkResult::Child) => {
-                // continue
-            }
-            Err(e) => {
-                return Err(e.into());
-            }
-        };
+        ::std::thread::spawn(move || {
+            sig_mask.thread_block().unwrap();
+            info!("{:?} starting main event loop", unistd::getpid());
+            // run impl's I/O event loop(s)
+            main.run();
+        });
 
         let mut aux = try!(Epoll::new_with(econfig, |_| {
             System {
                 sigfd: sigfd,
                 sig_h: sig_h,
-                parentpid: parentpid,
                 prop: prop,
             }
         }));
@@ -155,25 +134,20 @@ impl<S, R> Handler for System<S, R>
         trace!("ready(): {:?}: {:?}", ev.data, ev.events);
         if ev.data == self.sigfd.as_raw_fd() as u64 {
             match self.sigfd.read_signal() {
-                Ok(Some(sig)) if Signal::from_c_int(sig.ssi_signo as i32).unwrap() ==
-                                 Signal::SIGCHLD => {
-                    error!("child process quit unexpectedly ({:?}). Shutting down..",
-                           sig.ssi_signo);
-                    self.prop.stop();
-                    signal::kill(self.parentpid, signal::Signal::SIGKILL).unwrap();
-                    return EpollCmd::Shutdown;
-                }
+                // TODO I/O thread panic recovery
+                // Ok(Some(sig)) if Signal::from_c_int(sig.ssi_signo as i32).unwrap() ==
+                //                  Signal::SIGCHLD => {
+                //     error!("child process quit unexpectedly ({:?}). Shutting down..",
+                //            sig.ssi_signo);
+                //     self.prop.stop();
+                //     return EpollCmd::Shutdown;
+                // }
                 Ok(Some(sig)) => {
                     match self.sig_h.ready(Signal::from_c_int(sig.ssi_signo as i32).unwrap()) {
                         EpollCmd::Shutdown => {
-                            warn!("{:?} received signal {:?}. Shutting down parent pid {:?}..",
-                                  unistd::getpid(),
-                                  sig.ssi_signo,
-                                  self.parentpid);
+                            warn!("received signal {:?}. Shutting down ..", sig.ssi_signo);
                             // terminate child processes
                             self.prop.stop();
-                            signal::kill(self.parentpid, signal::Signal::SIGKILL).unwrap();
-                            // terminate server aux loop
                             return EpollCmd::Shutdown;
                         }
                         _ => {}

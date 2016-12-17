@@ -5,7 +5,6 @@ use nix::sys::socket::*;
 use slab::Slab;
 
 use handler::Handler;
-use buf::ByteBuffer;
 use error::*;
 use poll::*;
 use protocol::*;
@@ -13,14 +12,6 @@ use protocol::*;
 pub struct MuxEvent {
     pub kind: EpollEventKind,
     pub fd: RawFd,
-    buffer: *mut ByteBuffer,
-}
-
-impl MuxEvent {
-    #[inline]
-    pub fn buffer<'a>(&'a self) -> &'a mut ByteBuffer {
-        unsafe { &mut *self.buffer }
-    }
 }
 
 pub enum MuxCmd {
@@ -30,22 +21,19 @@ pub enum MuxCmd {
 
 pub struct SyncMux<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd> + 'p> {
     epfd: EpollFd,
-    buffers: Vec<ByteBuffer>,
     handlers: Slab<P::H, usize>,
-    protocol: &'p P,
+    protocol: &'p mut P,
     interests: EpollEventKind,
 }
 
 impl<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd>> SyncMux<'p, P> {
-    pub fn new(buffer_size: usize,
-               max_handlers: usize,
+    pub fn new(max_handlers: usize,
                interests: EpollEventKind,
                epfd: EpollFd,
-               protocol: &'p P)
+               protocol: &'p mut P)
                -> SyncMux<'p, P> {
         SyncMux {
             epfd: epfd,
-            buffers: vec!(ByteBuffer::with_capacity(buffer_size); max_handlers),
             handlers: Slab::with_capacity(max_handlers),
             protocol: protocol,
             interests: interests,
@@ -53,7 +41,7 @@ impl<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd>> SyncMux<'p, P> {
     }
 
     #[inline]
-    fn new_handler(protocol: &'p P,
+    fn new_handler(protocol: &'p mut P,
                    proto: Position<P::Protocol>,
                    clifd: RawFd,
                    interests: EpollEventKind,
@@ -67,11 +55,11 @@ impl<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd>> SyncMux<'p, P> {
                 let h = protocol.get_handler(proto, *epfd, i);
                 entry.insert(h);
 
-                let action = Action::Notify(i, clifd);
+                let action: Action<P> = Action::Notify(i, clifd);
 
                 let interest = EpollEvent {
                     events: interests,
-                    data: protocol.encode(action),
+                    data: MuxProtocol::encode(action),
                 };
 
                 match epfd.register(clifd, &interest) {
@@ -91,26 +79,38 @@ impl<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd>> SyncMux<'p, P> {
     }
 
     #[inline]
-    fn decode(protocol: &'p P,
+    fn decode(protocol: &'p mut P,
               epfd: &EpollFd,
               event: EpollEvent,
               interests: EpollEventKind,
               handlers: &mut Slab<P::H, usize>)
               -> Result<Option<(usize, RawFd)>> {
 
-        match protocol.decode(event.data) {
+        let action: Action<P> = MuxProtocol::decode(event.data);
+        match action {
             Action::New(proto, clifd) => {
-                let (idx, fd) =
-                    Self::new_handler(protocol, Position::Handler(proto), clifd, interests, epfd, handlers)?;
+                let (idx, fd) = Self::new_handler(protocol,
+                                                  Position::Handler(proto),
+                                                  clifd,
+                                                  interests,
+                                                  epfd,
+                                                  handlers)
+                    ?;
                 Ok(Some((idx, fd)))
             }
             Action::Notify(i, fd) => Ok(Some((i, fd))),
             Action::NoAction(data) => {
                 let srvfd = data as i32;
-                match eintr!(accept4, "accept4", srvfd, SockFlag::empty()) {
+                match eintr!(accept, "accept", srvfd) {
                     Ok(Some(clifd)) => {
-                        trace!("accept4: accepted new tcp client {}", &clifd);
-                        Self::new_handler(protocol, Position::Root, clifd, interests, epfd, handlers)?;
+                        trace!("accept: accepted new tcp client {}", &clifd);
+                        Self::new_handler(protocol,
+                                          Position::Root,
+                                          clifd,
+                                          interests,
+                                          epfd,
+                                          handlers)
+                            ?;
                         Ok(None)
                     }
                     Ok(None) => Err("accept4: socket not ready".into()),
@@ -127,10 +127,14 @@ impl<'p, P> Handler for SyncMux<'p, P>
     type In = EpollEvent;
     type Out = EpollCmd;
 
+    #[inline]
     fn ready(&mut self, event: EpollEvent) -> EpollCmd {
 
+        // FIXME
+        let proto: &'p mut P = unsafe { ::std::mem::transmute_copy(&mut self.protocol) };
+
         let (idx, fd) =
-            match SyncMux::decode(self.protocol, &self.epfd, event, self.interests, &mut self.handlers) {
+            match SyncMux::decode(proto, &self.epfd, event, self.interests, &mut self.handlers) {
                 Ok(Some((idx, fd))) => (idx, fd),
                 Ok(None) => {
                     // new connection
@@ -142,16 +146,13 @@ impl<'p, P> Handler for SyncMux<'p, P>
                 }
             };
 
-        let buffer = &mut self.buffers[idx];
-
         match self.handlers[idx].ready(MuxEvent {
-            buffer: buffer as *mut ByteBuffer,
             kind: event.events,
             fd: fd,
         }) {
             MuxCmd::Clear => {
-                buffer.clear();
-                self.handlers.remove(idx);
+                let handler = self.handlers.remove(idx).unwrap();
+                self.protocol.done(handler, idx);
             }
             _ => {}
         }

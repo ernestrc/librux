@@ -19,7 +19,9 @@ pub trait StaticProtocol<'proto, In, Out>
 {
     type H: Handler<In = In, Out = Out>;
 
-    fn get_handler(&'proto self, p: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Self::H;
+    fn done(&mut self, handler: Self::H, index: usize);
+
+    fn get_handler(&'proto mut self, p: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Self::H;
 }
 
 pub trait MuxProtocol
@@ -27,7 +29,8 @@ pub trait MuxProtocol
 {
     type Protocol: From<usize> + Into<usize>;
 
-    fn encode(&self, action: Action<Self>) -> u64 {
+    #[inline]
+    fn encode(action: Action<Self>) -> u64 {
         match action {
             Action::Notify(data, fd) => ((fd as u64) << 31) | ((data as u64) << 15) | 0,
             Action::New(protocol, fd) => {
@@ -38,7 +41,8 @@ pub trait MuxProtocol
         }
     }
 
-    fn decode(&self, data: u64) -> Action<Self> {
+    #[inline]
+    fn decode(data: u64) -> Action<Self> {
         let arg1 = ((data >> 15) & 0xffff) as usize;
         let fd = (data >> 31) as i32;
         match data & 0x7fff {

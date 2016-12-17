@@ -3,10 +3,10 @@
 # use-case: analyze request/response latency
 
 [general]
-threads = 4
-connections = 100
+threads = 6
+connections = 10
 duration = 20
-windows = 5
+windows = 1
 protocol = "echo"
 tcp-nodelay = false
 ipv4 = true
@@ -19,5 +19,5 @@ rate = 50000
 
 [[workload.parameter]]
 style = "static"
-size = 100
+size = 1
 seed = 0

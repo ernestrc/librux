@@ -42,6 +42,8 @@ pub enum EpollCmd {
     Poll,
 }
 
+unsafe impl<H> Send for Epoll<H> { }
+
 impl<H: Handler<In = EpollEvent, Out = EpollCmd>> Epoll<H> {
     pub fn from_fd(epfd: EpollFd, handler: H, config: EpollConfig) -> Epoll<H> {
         Epoll {
@@ -65,22 +67,25 @@ impl<H: Handler<In = EpollEvent, Out = EpollCmd>> Epoll<H> {
         Ok(Self::from_fd(epfd, handler, config))
     }
 
-    #[inline]
-    pub fn run(&mut self) {
-        loop {
-            let dst = unsafe {
-                ::std::slice::from_raw_parts_mut(self.buf.as_mut_ptr(), self.buf.capacity())
-            };
-            let cnt = epoll_wait(self.epfd.fd, dst, self.loop_ms).unwrap();
-            unsafe { self.buf.set_len(cnt) }
+    #[inline(always)]
+    pub fn run_once(&mut self) {
+        let dst =
+            unsafe { ::std::slice::from_raw_parts_mut(self.buf.as_mut_ptr(), self.buf.capacity()) };
+        let cnt = epoll_wait(self.epfd.fd, dst, self.loop_ms).unwrap();
+        unsafe { self.buf.set_len(cnt) }
 
-            {
-                for ev in self.buf.iter() {
-                    if let EpollCmd::Shutdown = self.handler.ready(*ev) {
-                        return;
-                    }
+        {
+            for ev in self.buf.iter() {
+                if let EpollCmd::Shutdown = self.handler.ready(*ev) {
+                    return;
                 }
             }
+        }
+    }
+
+    pub fn run(&mut self) {
+        loop {
+            self.run_once();
         }
     }
 }
@@ -98,27 +103,27 @@ impl EpollFd {
         EpollFd { fd: fd }
     }
 
-    #[inline]
+    #[inline(always)]
     fn ctl(&self, op: EpollOp, interest: &EpollEvent, fd: RawFd) -> Result<()> {
         try!(epoll_ctl(self.fd, op, fd, interest));
         Ok(())
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn reregister(&self, fd: RawFd, interest: &EpollEvent) -> Result<()> {
         trace!("reregister()");
         try!(self.ctl(EpollOp::EpollCtlMod, interest, fd));
         Ok(())
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn register(&self, fd: RawFd, interest: &EpollEvent) -> Result<()> {
         trace!("register()");
         try!(self.ctl(EpollOp::EpollCtlAdd, interest, fd));
         Ok(())
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn unregister(&self, fd: RawFd) -> Result<()> {
         trace!("unregister()");
         try!(self.ctl(EpollOp::EpollCtlDel, &NO_INTEREST, fd));

@@ -1,6 +1,6 @@
 use error::Result;
 use poll::{EpollEvent, EpollCmd, Epoll, EpollConfig};
-use protocol::StaticProtocol;
+use handler::Handler;
 
 pub mod system;
 pub mod server;
@@ -9,10 +9,11 @@ pub mod signals;
 use self::signals::SigSet;
 
 pub trait Prop {
+    type Root: Handler<In=EpollEvent, Out=EpollCmd>;
+
     fn get_epoll_config(&self) -> EpollConfig;
 
     fn stop(&self);
 
-    fn setup<'p, P>(&mut self, mask: SigSet, protocol: &'p P) -> Result<Epoll<P::H>>
-        where P: StaticProtocol<'p, EpollEvent, EpollCmd>;
+    fn setup(&mut self, mask: SigSet) -> Result<Epoll<Self::Root>>;
 }

@@ -2,7 +2,7 @@ use std::cmp;
 
 use error::{Result, ErrorKind};
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct ByteBuffer {
     next_write: usize,
     next_read: usize,
