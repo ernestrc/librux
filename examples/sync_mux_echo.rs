@@ -24,12 +24,14 @@ const MAX_CONN: usize = 2048;
 ///
 /// For benchmarking I/O throuput and latency
 pub struct EchoHandler {
-    buffer: ByteBuffer
+    buffer: ByteBuffer,
 }
 
 impl Handler for EchoHandler {
     type In = MuxEvent;
     type Out = MuxCmd;
+
+    fn update(&mut self, _: EpollFd) {}
 
     fn ready(&mut self, event: MuxEvent) -> MuxCmd {
 
@@ -37,7 +39,6 @@ impl Handler for EchoHandler {
         let kind = event.kind;
 
         if kind.contains(EPOLLHUP) || kind.contains(EPOLLRDHUP) {
-            trace!("socket's fd {}: EPOLLHUP", fd);
             perror!("close: {}", close(fd));
             return MuxCmd::Clear;
         }
@@ -47,23 +48,15 @@ impl Handler for EchoHandler {
         }
 
         if kind.contains(EPOLLIN) {
-            trace!("socket's fd {}: EPOLLIN", fd);
             if let Some(n) = read(fd, From::from(&mut self.buffer)).unwrap() {
-                trace!("on_readable(): {:?} bytes", n);
                 self.buffer.extend(n);
-            } else {
-                trace!("on_readable(): socket not ready");
             }
         }
 
         if kind.contains(EPOLLOUT) {
-            trace!("socket's fd {}: EPOLLOUT", fd);
             if self.buffer.is_readable() {
                 if let Some(cnt) = rsend(fd, From::from(&self.buffer), MSG_DONTWAIT).unwrap() {
-                    trace!("on_writable() bytes {}", cnt);
                     self.buffer.consume(cnt);
-                } else {
-                    trace!("on_writable(): socket not ready");
                 }
             }
         }
@@ -77,39 +70,19 @@ struct EchoProtocol {
     buffers: Vec<Option<ByteBuffer>>
 }
 
-impl<'p> StaticProtocol<'p, MuxEvent, MuxCmd> for EchoProtocol {
+impl StaticProtocol<MuxEvent, MuxCmd> for EchoProtocol {
     type H = EchoHandler;
 
     fn done(&mut self, handler: EchoHandler, index: usize) {
         let EchoHandler { mut buffer } = handler;
-
         buffer.clear();
 
-        trace!("done(): {:?}", self.buffers);
         self.buffers[index] = Some(buffer);
-        trace!("done(): {:?}", self.buffers);
     }
 
     fn get_handler(&mut self, _: Position<usize>, _: EpollFd, index: usize) -> EchoHandler {
-        trace!("get_handler(): {:p}", &self.buffers);
         let buffer = self.buffers[index].take().unwrap();
-        trace!("get_handler(): {:?}", self.buffers);
         EchoHandler { buffer: buffer }
-    }
-}
-
-impl<'p> StaticProtocol<'p, EpollEvent, EpollCmd> for EchoProtocol {
-    type H = SyncMux<'p, EchoProtocol>;
-
-    fn done(&mut self, _: SyncMux<'p, EchoProtocol>, _: usize) {}
-
-    fn get_handler(&'p mut self,
-                   _: Position<usize>,
-                   epfd: EpollFd,
-                   _: usize)
-                   -> SyncMux<'p, EchoProtocol> {
-        let interests = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLRDHUP;
-        SyncMux::new(MAX_CONN, interests, epfd, self)
     }
 }
 
@@ -144,9 +117,14 @@ fn main() {
 
     assert!(buffers.len() == MAX_CONN);
 
-    let protocol = EchoProtocol {
-        buffers: buffers.into_iter().map(|b| Some(b)).collect(),
-    };
+    let protocol = EchoProtocol { buffers: buffers.into_iter().map(|b| Some(b)).collect() };
 
-    System::build(Server::new(config, protocol).unwrap()).start().unwrap();
+    let interests = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLRDHUP;
+
+    let server = Server::new_with(config,
+                                  |epfd| SyncMux::new(MAX_CONN, interests, epfd, protocol))
+        .unwrap();
+
+
+    System::build(server).start().unwrap();
 }

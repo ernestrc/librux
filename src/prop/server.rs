@@ -1,8 +1,6 @@
 use std::net::ToSocketAddrs;
 use std::os::unix::io::RawFd;
-use std::mem;
 use std::thread;
-use std::fmt;
 
 use nix::sys::socket::*;
 use nix::sys::signalfd::SigSet;
@@ -13,19 +11,19 @@ use nix::sched;
 
 use error::*;
 use poll::*;
-use protocol::*;
+use handler::Handler;
 use prop::Prop;
 
 /// Prop implementation that creates one AF_INET/SOCK_STREAM socket and uses it to bind/listen
 /// at the specified address. It will create one handler/epoll instance per `io_thread`.
-pub struct Server<P>
-    where P: StaticProtocol<'static, EpollEvent, EpollCmd> + Send + Clone + fmt::Debug + 'static
+pub struct Server<H>
+    where H: Handler<In = EpollEvent, Out = EpollCmd> + Send + Clone + 'static
 {
     srvfd: RawFd,
     cepfd: EpollFd,
     sockaddr: SockAddr,
     max_conn: usize,
-    protocol: P,
+    template: H,
     io_threads: usize,
     epoll_config: EpollConfig,
 }
@@ -72,10 +70,12 @@ impl ServerConfig {
     }
 }
 
-impl<P> Server<P>
-    where P: StaticProtocol<'static, EpollEvent, EpollCmd> + Send + Clone + fmt::Debug + 'static
+impl<H> Server<H>
+    where H: Handler<In = EpollEvent, Out = EpollCmd> + Send + Clone + 'static
 {
-    pub fn new(config: ServerConfig, protocol: P) -> Result<Server<P>> {
+    pub fn new_with<F>(config: ServerConfig, new_template: F) -> Result<Server<H>>
+        where F: FnOnce(EpollFd) -> H
+    {
 
         let ServerConfig { io_threads, max_conn, sockaddr, epoll_config } = config;
 
@@ -93,7 +93,7 @@ impl<P> Server<P>
             sockaddr: sockaddr,
             cepfd: cepfd,
             srvfd: srvfd,
-            protocol: protocol,
+            template: new_template(cepfd),
             max_conn: max_conn,
             io_threads: io_threads,
             epoll_config: epoll_config,
@@ -105,19 +105,16 @@ impl<P> Server<P>
     }
 }
 
-impl<P> Prop for Server<P>
-    where P: StaticProtocol<'static, EpollEvent, EpollCmd> + Send + Clone + fmt::Debug + 'static
+impl<H> Prop for Server<H>
+    where H: Handler<In = EpollEvent, Out = EpollCmd> + Send + Clone + 'static
 {
-    type Root = P::H;
+    type Root = H;
 
     fn get_epoll_config(&self) -> EpollConfig {
         self.epoll_config
     }
 
-    fn setup(&mut self, mask: SigSet) -> Result<Epoll<Self::Root>>
-        where P: StaticProtocol<'static, EpollEvent, EpollCmd> + Send + Clone + fmt::Debug + 'static
-    {
-        trace!("bind()");
+    fn setup(&mut self, mask: SigSet) -> Result<Epoll<Self::Root>> {
 
         try!(eintr!(bind, "bind", self.srvfd, &self.sockaddr));
         info!("bind: fd {} to {}", self.srvfd, self.sockaddr);
@@ -133,7 +130,7 @@ impl<P> Prop for Server<P>
         };
 
         try!(self.cepfd.register(self.srvfd, &ceinfo));
-        trace!("registered main epoll interest on {}", self.srvfd);
+        debug!("registered main interest on {}", self.srvfd);
 
         let io_threads = self.io_threads;
         let epoll_config = self.epoll_config;
@@ -144,23 +141,16 @@ impl<P> Prop for Server<P>
             let epfd = EpollFd::new(try!(epoll_create()));
 
             // try!(epfd.register(srvfd, &ceinfo));
-            trace!("registered thread {} interest on {}", i, srvfd);
+            debug!("registered thread {} interest on {}", i, srvfd);
 
-            let mut copy_proto = self.protocol.clone();
+            let mut handler = self.template.clone();
 
-            trace!("copy {} of proto {:p}", i, &copy_proto);
+            handler.update(epfd);
 
             thread::spawn(move || {
-                // fake static lifetime
-                let thread_proto_ref = &mut copy_proto;
-                let thread_proto: &'static mut P = unsafe { mem::transmute_copy(thread_proto_ref) };
-
-                trace!("thread {} proto {:p}", i, thread_proto);
-
                 // add the set of signals to the signal mask for all threads
                 mask.thread_block().unwrap();
 
-                let handler = thread_proto.get_handler(Position::Root, epfd, i);
                 let mut epoll = Epoll::from_fd(epfd, handler, epoll_config);
 
                 let aff = i % ::num_cpus::get();
@@ -177,13 +167,7 @@ impl<P> Prop for Server<P>
             });
         }
 
-        // FIXME cap is 0 and ByteBuffers are null pointers
-        // $3 = EchoProtocol = {buffers = Vec<core::option::Option<rux::buf::ByteBuffer>>(len: 2048, cap: 0) = {Cannot access memory at address 0x0
-        //
-        let proto: &'static mut P = unsafe { mem::transmute_copy(&mut self.protocol) };
-
-        let handler = proto.get_handler(Position::Root, self.cepfd, 0);
-        let epoll = Epoll::from_fd(self.cepfd, handler, epoll_config);
+        let epoll = Epoll::from_fd(self.cepfd, self.template.clone(), epoll_config);
 
         debug!("created {} I/O epoll instances", self.io_threads);
         info!("starting I/O thread 0 event loop");
@@ -204,8 +188,8 @@ impl<P> Prop for Server<P>
     }
 }
 
-impl<P> Drop for Server<P>
-    where P: StaticProtocol<'static, EpollEvent, EpollCmd> + Send + Clone + fmt::Debug + 'static
+impl<H> Drop for Server<H>
+    where H: Handler<In = EpollEvent, Out = EpollCmd> + Send + Clone + 'static
 {
     fn drop(&mut self) {
         unistd::close(self.srvfd).unwrap();

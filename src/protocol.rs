@@ -14,14 +14,14 @@ pub enum Position<P> {
     Handler(P),
 }
 
-pub trait StaticProtocol<'proto, In, Out>
+pub trait StaticProtocol<In, Out>
     where Self: MuxProtocol
 {
     type H: Handler<In = In, Out = Out>;
 
     fn done(&mut self, handler: Self::H, index: usize);
 
-    fn get_handler(&'proto mut self, p: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Self::H;
+    fn get_handler(&mut self, p: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Self::H;
 }
 
 pub trait MuxProtocol
@@ -30,7 +30,7 @@ pub trait MuxProtocol
     type Protocol: From<usize> + Into<usize>;
 
     #[inline]
-    fn encode(action: Action<Self>) -> u64 {
+    fn encode(&self, action: Action<Self>) -> u64 {
         match action {
             Action::Notify(data, fd) => ((fd as u64) << 31) | ((data as u64) << 15) | 0,
             Action::New(protocol, fd) => {
@@ -42,7 +42,7 @@ pub trait MuxProtocol
     }
 
     #[inline]
-    fn decode(data: u64) -> Action<Self> {
+    fn decode(&self, data: u64) -> Action<Self> {
         let arg1 = ((data >> 15) & 0xffff) as usize;
         let fd = (data >> 31) as i32;
         match data & 0x7fff {
@@ -102,10 +102,11 @@ mod tests {
         type Protocol = usize;
     }
 
-    impl<'p> StaticProtocol<'p, EpollEvent, EpollCmd> for TestMuxProtocol {
+    impl<'p> StaticProtocol<EpollEvent, EpollCmd> for TestMuxProtocol {
         type H = TestHandler;
+        fn done(&mut self, handler: Self::H, index: usize) {}
 
-        fn get_handler(&'p self, _: Position<usize>, _: EpollFd, _: usize) -> TestHandler {
+        fn get_handler(&mut self, _: Position<usize>, _: EpollFd, _: usize) -> TestHandler {
             TestHandler {
                 on_close: false,
                 on_error: false,

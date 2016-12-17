@@ -1,5 +1,4 @@
 use std::os::unix::io::AsRawFd;
-use std::fmt;
 
 use nix::sys::signalfd::{SignalFd, SFD_NONBLOCK};
 use nix::unistd;
@@ -15,6 +14,7 @@ use prop::signals::DefaultSigHandler;
 pub struct SystemBuilder<S, P> {
     prop: P,
     sig_h: S,
+    // TODO nice: i32,
     sig_mask: SigSet,
 }
 
@@ -130,8 +130,9 @@ impl<S, R> Handler for System<S, R>
     type In = EpollEvent;
     type Out = EpollCmd;
 
+    fn update(&mut self, _: EpollFd) { }
+
     fn ready(&mut self, ev: EpollEvent) -> EpollCmd {
-        trace!("ready(): {:?}: {:?}", ev.data, ev.events);
         if ev.data == self.sigfd.as_raw_fd() as u64 {
             match self.sigfd.read_signal() {
                 // TODO I/O thread panic recovery
