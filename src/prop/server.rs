@@ -1,22 +1,23 @@
+
+
+use error::*;
+use handler::Handler;
+use nix::sched;
+use nix::sys::signal;
+use nix::sys::signal::Signal;
+use nix::sys::signalfd::SigSet;
+
+use nix::sys::socket::*;
+use nix::unistd;
+use poll::*;
+use prop::Prop;
+use std::net;
 use std::net::ToSocketAddrs;
 use std::os::unix::io::RawFd;
 use std::thread;
-use std::net;
-
-use nix::sys::socket::*;
-use nix::sys::signalfd::SigSet;
-use nix::sys::signal;
-use nix::unistd;
-use nix::sys::signal::Signal;
-use nix::sched;
-
-use error::*;
-use poll::*;
-use handler::Handler;
-use prop::Prop;
 
 pub struct Server<H>
-    where H: Handler<In = EpollEvent, Out = EpollCmd> + Send + Clone + 'static
+    where H: Handler<In = EpollEvent, Out = EpollCmd> + Send + Clone + 'static,
 {
     srvfd: RawFd,
     epfd: EpollFd,
@@ -41,20 +42,21 @@ pub struct ServerConfig {
 impl ServerConfig {
     pub fn tcp<A: ToSocketAddrs>(addr: A) -> Result<ServerConfig> {
         let (sockaddr, family) = inet(addr)?;
-        ServerConfig::new(sockaddr, SockType::Stream, family, SOCK_NONBLOCK, 0)
+        ServerConfig::new(sockaddr, SockType::Stream, family, SOCK_NONBLOCK, 6)
     }
 
     pub fn udp<A: ToSocketAddrs>(addr: A) -> Result<ServerConfig> {
         let (sockaddr, family) = inet(addr)?;
-        ServerConfig::new(sockaddr, SockType::Datagram, family, SOCK_NONBLOCK, 0)
+        ServerConfig::new(sockaddr, SockType::Datagram, family, SOCK_NONBLOCK, 17)
     }
 
-    pub fn new(sockaddr: SockAddr,
-               socktype: SockType,
-               family: AddressFamily,
-               sockflag: SockFlag,
-               sockproto: i32)
-               -> Result<ServerConfig> {
+    pub fn new(
+        sockaddr: SockAddr,
+        socktype: SockType,
+        family: AddressFamily,
+        sockflag: SockFlag,
+        sockproto: i32
+    ) -> Result<ServerConfig> {
 
         let cpus = ::num_cpus::get();
         let max_conn = 5000 * cpus;
@@ -77,46 +79,55 @@ impl ServerConfig {
     }
 
     pub fn max_conn(self, max_conn: usize) -> ServerConfig {
-        ServerConfig { max_conn: max_conn, ..self }
+        ServerConfig {
+            max_conn: max_conn,
+            ..self
+        }
     }
 
     pub fn sockflag(self, sockflag: SockFlag) -> ServerConfig {
-        ServerConfig { sockflag: sockflag, ..self }
+        ServerConfig {
+            sockflag: sockflag,
+            ..self
+        }
     }
 
     pub fn io_threads(self, io_threads: usize) -> ServerConfig {
         assert!(io_threads > 0, "I/O threads must be greater than 0");
-        ServerConfig { io_threads: io_threads, ..self }
+        ServerConfig {
+            io_threads: io_threads,
+            ..self
+        }
     }
 
     pub fn epoll_config(self, epoll_config: EpollConfig) -> ServerConfig {
-        ServerConfig { epoll_config: epoll_config, ..self }
+        ServerConfig {
+            epoll_config: epoll_config,
+            ..self
+        }
     }
 }
 
 impl<H> Server<H>
-    where H: Handler<In = EpollEvent, Out = EpollCmd> + Send + Clone + 'static
+    where H: Handler<In = EpollEvent, Out = EpollCmd> + Send + Clone + 'static,
 {
     pub fn new_with<F>(config: ServerConfig, new_handler: F) -> Result<Server<H>>
-        where F: FnOnce(EpollFd) -> H
+        where F: FnOnce(EpollFd) -> H,
     {
 
-        let ServerConfig { io_threads,
-                           max_conn,
-                           socktype,
-                           sockaddr,
-                           sockflag,
-                           sockproto,
-                           family,
-                           epoll_config } = config;
+        let ServerConfig { io_threads, max_conn, socktype, sockaddr, sockflag, sockproto, family, epoll_config } =
+            config;
 
         let fd = epoll_create()?;
 
-        let epfd = EpollFd { fd: fd };
+        let epfd = EpollFd {
+            fd: fd,
+        };
 
         let srvfd = socket(family, socktype, sockflag, sockproto)? as i32;
 
         setsockopt(srvfd, sockopt::ReuseAddr, &true).unwrap();
+        setsockopt(srvfd, sockopt::ReusePort, &true).unwrap();
 
         Ok(Server {
             sockaddr: sockaddr,
@@ -135,7 +146,7 @@ impl<H> Server<H>
 }
 
 impl<H> Prop for Server<H>
-    where H: Handler<In = EpollEvent, Out = EpollCmd> + Send + Clone + 'static
+    where H: Handler<In = EpollEvent, Out = EpollCmd> + Send + Clone + 'static,
 {
     type Root = H;
 
@@ -218,7 +229,7 @@ impl<H> Prop for Server<H>
 }
 
 impl<H> Drop for Server<H>
-    where H: Handler<In = EpollEvent, Out = EpollCmd> + Send + Clone + 'static
+    where H: Handler<In = EpollEvent, Out = EpollCmd> + Send + Clone + 'static,
 {
     fn drop(&mut self) {
         unistd::close(self.srvfd).unwrap();
@@ -226,7 +237,10 @@ impl<H> Drop for Server<H>
 }
 
 fn inet<A: ToSocketAddrs>(addr: A) -> Result<(SockAddr, AddressFamily)> {
-    let inet_addr_std = addr.to_socket_addrs().unwrap().next().ok_or("could not parse sockaddr")?;
+    let inet_addr_std = addr.to_socket_addrs()
+        .unwrap()
+        .next()
+        .ok_or("could not parse sockaddr")?;
     let inet_addr = InetAddr::from_std(&inet_addr_std);
     let sockaddr = SockAddr::Inet(inet_addr);
 

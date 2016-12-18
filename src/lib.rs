@@ -88,14 +88,14 @@ pub mod poll;
 pub mod buf;
 pub mod prop;
 
-use std::os::unix::io::RawFd;
+pub use nix::fcntl;
+pub use nix::sched;
+pub use nix::sys;
 
 pub use nix::unistd;
-pub use nix::fcntl;
-pub use nix::sys;
-pub use nix::sched;
 
 pub use nix::unistd::close;
+use std::os::unix::io::RawFd;
 
 #[inline]
 pub fn write(fd: RawFd, buf: &[u8]) -> Result<Option<usize>> {
@@ -110,11 +110,12 @@ pub fn send(fd: RawFd, buf: &[u8], flags: sys::socket::MsgFlags) -> Result<Optio
 }
 
 #[inline]
-pub fn sendto(fd: RawFd,
-              buf: &[u8],
-              addr: &sys::socket::SockAddr,
-              flags: sys::socket::MsgFlags)
-              -> Result<Option<usize>> {
+pub fn sendto(
+    fd: RawFd,
+    buf: &[u8],
+    addr: &sys::socket::SockAddr,
+    flags: sys::socket::MsgFlags
+) -> Result<Option<usize>> {
     let b = try!(eintr!(sys::socket::sendto,
                         "sys::socket::sendto",
                         fd,
@@ -124,12 +125,14 @@ pub fn sendto(fd: RawFd,
     Ok(b)
 }
 
+pub fn recv(fd: RawFd, buf: &mut [u8], flags: sys::socket::MsgFlags) -> Result<Option<usize>> {
+
+    let b = try!(eintr!(sys::socket::recv, "sys::socket::recv", fd, buf, flags));
+    Ok(b)
+}
+
 #[inline]
 pub fn read(fd: RawFd, buf: &mut [u8]) -> Result<Option<usize>> {
-
     let b = try!(eintr!(unistd::read, "unistd::read", fd, buf));
-
-    trace!("unistd::read {:?} bytes", b);
-
     Ok(b)
 }

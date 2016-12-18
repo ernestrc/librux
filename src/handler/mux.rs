@@ -1,14 +1,14 @@
-use std::os::unix::io::RawFd;
-use std::mem;
-
-use nix::unistd::close as rclose;
-use nix::sys::socket::*;
-use slab::Slab;
+use error::*;
 
 use handler::Handler;
-use error::*;
+use nix::sys::socket::*;
+
+use nix::unistd::close as rclose;
 use poll::*;
 use protocol::*;
+use slab::Slab;
+use std::mem;
+use std::os::unix::io::RawFd;
 
 pub struct MuxEvent {
     pub kind: EpollEventKind,
@@ -39,11 +39,7 @@ impl<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd> + Clone> Clone for SyncMux<'p, 
 }
 
 impl<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd>> SyncMux<'p, P> {
-    pub fn new(max_handlers: usize,
-               interests: EpollEventKind,
-               epfd: EpollFd,
-               protocol: P)
-               -> SyncMux<'p, P> {
+    pub fn new(max_handlers: usize, interests: EpollEventKind, epfd: EpollFd, protocol: P) -> SyncMux<'p, P> {
         SyncMux {
             epfd: epfd,
             handlers: Slab::with_capacity(max_handlers),
@@ -53,13 +49,14 @@ impl<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd>> SyncMux<'p, P> {
     }
 
     #[inline(always)]
-    fn new_handler(protocol: &'p mut P,
-                   proto: Position<P::Protocol>,
-                   clifd: RawFd,
-                   interests: EpollEventKind,
-                   epfd: &EpollFd,
-                   handlers: &mut Slab<P::H, usize>)
-                   -> Result<(usize, RawFd)> {
+    fn new_handler(
+        protocol: &'p mut P,
+        proto: Position<P::Protocol>,
+        clifd: RawFd,
+        interests: EpollEventKind,
+        epfd: &EpollFd,
+        handlers: &mut Slab<P::H, usize>
+    ) -> Result<(usize, RawFd)> {
         match handlers.vacant_entry() {
             Some(entry) => {
 
@@ -91,12 +88,13 @@ impl<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd>> SyncMux<'p, P> {
     }
 
     #[inline(always)]
-    fn decode(protocol: &'p mut P,
-              epfd: &EpollFd,
-              event: EpollEvent,
-              interests: EpollEventKind,
-              handlers: &mut Slab<P::H, usize>)
-              -> Result<Option<(usize, RawFd)>> {
+    fn decode(
+        protocol: &'p mut P,
+        epfd: &EpollFd,
+        event: EpollEvent,
+        interests: EpollEventKind,
+        handlers: &mut Slab<P::H, usize>
+    ) -> Result<Option<(usize, RawFd)>> {
 
         let action: Action<P> = protocol.decode(event.data);
         match action {
@@ -106,8 +104,7 @@ impl<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd>> SyncMux<'p, P> {
                                                   clifd,
                                                   interests,
                                                   epfd,
-                                                  handlers)
-                    ?;
+                                                  handlers)?;
                 Ok(Some((idx, fd)))
             }
             Action::Notify(i, fd) => Ok(Some((i, fd))),
@@ -116,13 +113,7 @@ impl<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd>> SyncMux<'p, P> {
                 match eintr!(accept, "accept", srvfd) {
                     Ok(Some(clifd)) => {
                         debug!("accept: accepted new tcp client {}", &clifd);
-                        Self::new_handler(protocol,
-                                          Position::Root,
-                                          clifd,
-                                          interests,
-                                          epfd,
-                                          handlers)
-                            ?;
+                        Self::new_handler(protocol, Position::Root, clifd, interests, epfd, handlers)?;
                         Ok(None)
                     }
                     Ok(None) => Err("accept4: socket not ready".into()),
@@ -134,7 +125,7 @@ impl<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd>> SyncMux<'p, P> {
 }
 
 impl<'p, P> Handler for SyncMux<'p, P>
-    where P: StaticProtocol<'p, MuxEvent, MuxCmd>
+    where P: StaticProtocol<'p, MuxEvent, MuxCmd>,
 {
     type In = EpollEvent;
     type Out = EpollCmd;
@@ -148,11 +139,7 @@ impl<'p, P> Handler for SyncMux<'p, P>
         // FIXME: solve with associated lifetimes
         let proto: &'p mut P = unsafe { mem::transmute(&mut self.protocol) };
 
-        let (idx, fd) = match SyncMux::decode(proto,
-                                              &self.epfd,
-                                              event,
-                                              self.interests,
-                                              &mut self.handlers) {
+        let (idx, fd) = match SyncMux::decode(proto, &self.epfd, event, self.interests, &mut self.handlers) {
             Ok(Some((idx, fd))) => (idx, fd),
             Ok(None) => {
                 // new connection

@@ -4,7 +4,7 @@ extern crate log;
 extern crate rux;
 extern crate env_logger;
 
-use rux::{read, send as rsend, close};
+use rux::{send as rsend, recv as rrecv, close};
 use rux::handler::*;
 use rux::protocol::*;
 use rux::poll::*;
@@ -16,7 +16,7 @@ use rux::handler::mux::{SyncMux, MuxEvent, MuxCmd};
 use rux::prop::system::System;
 
 const BUF_SIZE: usize = 2048;
-const EPOLL_BUF_SIZE: usize = 2048;
+const EPOLL_BUF_CAP: usize = 2048;
 const EPOLL_LOOP_MS: isize = -1;
 const MAX_CONN: usize = 2048;
 
@@ -48,7 +48,7 @@ impl<'p> Handler for EchoHandler<'p> {
         }
 
         if kind.contains(EPOLLIN) {
-            if let Some(n) = read(fd, From::from(&mut *self.buffer)).unwrap() {
+            if let Some(n) = rrecv(fd, From::from(&mut *self.buffer), MSG_DONTWAIT).unwrap() {
                 self.buffer.extend(n);
             }
         }
@@ -90,9 +90,9 @@ fn main() {
 
     ::env_logger::init().unwrap();
 
-    info!("BUF_SIZE: {}; EPOLL_BUF_SIZE: {}; EPOLL_LOOP_MS: {}; MAX_CONN: {}",
+    info!("BUF_SIZE: {}; EPOLL_BUF_CAP: {}; EPOLL_LOOP_MS: {}; MAX_CONN: {}",
           BUF_SIZE,
-          EPOLL_BUF_SIZE,
+          EPOLL_BUF_CAP,
           EPOLL_LOOP_MS,
           MAX_CONN);
 
@@ -102,7 +102,7 @@ fn main() {
         .io_threads(1)
         .epoll_config(EpollConfig {
             loop_ms: EPOLL_LOOP_MS,
-            buffer_size: EPOLL_BUF_SIZE,
+            buffer_capacity: EPOLL_BUF_CAP,
         });
 
     let protocol = EchoProtocol { buffers: vec!(ByteBuffer::with_capacity(BUF_SIZE); MAX_CONN) };

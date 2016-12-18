@@ -1,37 +1,43 @@
-use std::os::unix::io::AsRawFd;
 
-use nix::sys::signalfd::{SignalFd, SFD_NONBLOCK};
-use nix::unistd;
-
-pub use nix::sys::signal::{Signal, SigSet};
 
 use error::Result;
 use handler::*;
+
+pub use nix::sys::signal::{Signal, SigSet};
+
+use nix::sys::signalfd::{SignalFd, SFD_NONBLOCK};
+use nix::unistd;
 use poll::*;
 use prop::Prop;
 use prop::signals::DefaultSigHandler;
+use std::os::unix::io::AsRawFd;
 
 pub struct SystemBuilder<S, P> {
     prop: P,
     sig_h: S,
-    // TODO nice: i32,
+    // TODO sched_policy: c_int,
     sig_mask: SigSet,
 }
 
 impl<S, P> SystemBuilder<S, P>
     where S: Handler<In = Signal, Out = EpollCmd>,
-          P: Prop + Send + 'static
+          P: Prop + Send + 'static,
 {
     pub fn with_sig_handler(self, handler: S) -> SystemBuilder<S, P> {
-        SystemBuilder { sig_h: handler, ..self }
+        SystemBuilder {
+            sig_h: handler,
+            ..self
+        }
     }
 
     pub fn with_sig_mask(self, mask: SigSet) -> SystemBuilder<S, P> {
-        SystemBuilder { sig_mask: mask, ..self }
+        SystemBuilder {
+            sig_mask: mask,
+            ..self
+        }
     }
 
-    pub fn start(self) -> Result<()>
-    {
+    pub fn start(self) -> Result<()> {
         System::start(self.prop, self.sig_h, self.sig_mask)
     }
 }
@@ -43,7 +49,7 @@ pub struct System<S, P> {
 }
 
 impl<P> System<DefaultSigHandler, P>
-    where P: Prop
+    where P: Prop,
 {
     pub fn build(prop: P) -> SystemBuilder<DefaultSigHandler, P> {
         // default mask
@@ -60,10 +66,9 @@ impl<P> System<DefaultSigHandler, P>
 
 impl<P, S> System<S, P>
     where P: Prop + Send + 'static,
-          S: Handler<In = Signal, Out = EpollCmd>
+          S: Handler<In = Signal, Out = EpollCmd>,
 {
-    pub fn start(mut prop: P, sig_h: S, mut sig_mask: SigSet) -> Result<()>
-    {
+    pub fn start(mut prop: P, sig_h: S, mut sig_mask: SigSet) -> Result<()> {
 
         sig_mask.add(Signal::SIGCHLD);
 
@@ -125,12 +130,12 @@ impl<L, I> Drop for System<L, I> {
 
 impl<S, R> Handler for System<S, R>
     where S: Handler<In = Signal, Out = EpollCmd>,
-          R: Prop
+          R: Prop,
 {
     type In = EpollEvent;
     type Out = EpollCmd;
 
-    fn update(&mut self, _: EpollFd) { }
+    fn update(&mut self, _: EpollFd) {}
 
     fn ready(&mut self, ev: EpollEvent) -> EpollCmd {
         if ev.data == self.sigfd.as_raw_fd() as u64 {
@@ -144,7 +149,8 @@ impl<S, R> Handler for System<S, R>
                 //     return EpollCmd::Shutdown;
                 // }
                 Ok(Some(sig)) => {
-                    match self.sig_h.ready(Signal::from_c_int(sig.ssi_signo as i32).unwrap()) {
+                    match self.sig_h
+                        .ready(Signal::from_c_int(sig.ssi_signo as i32).unwrap()) {
                         EpollCmd::Shutdown => {
                             warn!("received signal {:?}. Shutting down ..", sig.ssi_signo);
                             // terminate child processes

@@ -1,7 +1,7 @@
-use std::os::unix::io::RawFd;
+use handler::Handler;
 
 use poll::EpollFd;
-use handler::Handler;
+use std::os::unix::io::RawFd;
 
 pub enum Action<P: MuxProtocol> {
     New(P::Protocol, RawFd),
@@ -15,17 +15,18 @@ pub enum Position<P> {
 }
 
 pub trait StaticProtocol<'p, In, Out>
-    where Self: MuxProtocol + 'p
+    where Self: MuxProtocol + 'p,
 {
     type H: Handler<In = In, Out = Out>;
 
     fn done(&mut self, handler: Self::H, index: usize);
 
+    // TODO deprecate position ?
     fn get_handler(&'p mut self, p: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Self::H;
 }
 
 pub trait MuxProtocol
-    where Self: Sized
+    where Self: Sized,
 {
     type Protocol: From<usize> + Into<usize>;
 
@@ -55,8 +56,8 @@ pub trait MuxProtocol
 
 #[cfg(test)]
 mod tests {
-    use poll::*;
     use handler::Handler;
+    use poll::*;
     use super::*;
 
     #[derive(Clone)]

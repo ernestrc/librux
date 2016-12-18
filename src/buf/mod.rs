@@ -1,6 +1,5 @@
-use std::cmp;
-
 use error::{Result, ErrorKind};
+use std::cmp;
 
 #[derive(Debug, Clone)]
 pub struct ByteBuffer {
@@ -111,9 +110,9 @@ impl<'a> From<&'a mut ByteBuffer> for &'a mut [u8] {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::io::{Read, Cursor};
     use error::ErrorKind;
+    use std::io::{Read, Cursor};
+    use super::*;
 
     #[test]
     fn does_buffer() {

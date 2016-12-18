@@ -1,14 +1,15 @@
-use std::os::unix::io::RawFd;
-use std::fmt;
 
-use nix::sys::epoll::{epoll_ctl, epoll_wait, EpollOp};
-use nix::unistd;
 
 use error::Result;
 use handler::Handler;
 
-pub use nix::sys::epoll::{epoll_create, EpollEvent, EpollEventKind, EPOLLIN, EPOLLOUT, EPOLLERR,
-                          EPOLLHUP, EPOLLET, EPOLLONESHOT, EPOLLRDHUP, EPOLLEXCLUSIVE, EPOLLWAKEUP};
+pub use nix::sys::epoll::{epoll_create, EpollEvent, EpollEventKind, EPOLLIN, EPOLLOUT, EPOLLERR, EPOLLHUP, EPOLLET,
+                          EPOLLONESHOT, EPOLLRDHUP, EPOLLEXCLUSIVE, EPOLLWAKEUP};
+
+use nix::sys::epoll::{epoll_ctl, epoll_wait, EpollOp};
+use nix::unistd;
+use std::fmt;
+use std::os::unix::io::RawFd;
 
 lazy_static! {
     static ref NO_INTEREST: EpollEvent = {
@@ -22,7 +23,7 @@ lazy_static! {
 #[derive(Debug, Copy, Clone)]
 pub struct EpollConfig {
     pub loop_ms: isize,
-    pub buffer_size: usize,
+    pub buffer_capacity: usize,
 }
 
 pub struct Epoll<H> {
@@ -42,7 +43,7 @@ pub enum EpollCmd {
     Poll,
 }
 
-unsafe impl<H> Send for Epoll<H> { }
+unsafe impl<H> Send for Epoll<H> {}
 
 impl<H: Handler<In = EpollEvent, Out = EpollCmd>> Epoll<H> {
     pub fn from_fd(epfd: EpollFd, handler: H, config: EpollConfig) -> Epoll<H> {
@@ -50,17 +51,19 @@ impl<H: Handler<In = EpollEvent, Out = EpollCmd>> Epoll<H> {
             epfd: epfd,
             loop_ms: config.loop_ms,
             handler: handler,
-            buf: Vec::with_capacity(config.buffer_size),
+            buf: Vec::with_capacity(config.buffer_capacity),
         }
     }
 
     pub fn new_with<F>(config: EpollConfig, newctl: F) -> Result<Epoll<H>>
-        where F: FnOnce(EpollFd) -> H
+        where F: FnOnce(EpollFd) -> H,
     {
 
         let fd = try!(epoll_create());
 
-        let epfd = EpollFd { fd: fd };
+        let epfd = EpollFd {
+            fd: fd,
+        };
 
         let handler = newctl(epfd);
 
@@ -69,8 +72,7 @@ impl<H: Handler<In = EpollEvent, Out = EpollCmd>> Epoll<H> {
 
     #[inline(always)]
     pub fn run_once(&mut self) {
-        let dst =
-            unsafe { ::std::slice::from_raw_parts_mut(self.buf.as_mut_ptr(), self.buf.capacity()) };
+        let dst = unsafe { ::std::slice::from_raw_parts_mut(self.buf.as_mut_ptr(), self.buf.capacity()) };
         let cnt = epoll_wait(self.epfd.fd, dst, self.loop_ms).unwrap();
         unsafe { self.buf.set_len(cnt) }
 
@@ -100,7 +102,9 @@ unsafe impl Send for EpollFd {}
 
 impl EpollFd {
     pub fn new(fd: RawFd) -> EpollFd {
-        EpollFd { fd: fd }
+        EpollFd {
+            fd: fd,
+        }
     }
 
     #[inline(always)]
@@ -147,7 +151,7 @@ impl Default for EpollConfig {
     fn default() -> EpollConfig {
         EpollConfig {
             loop_ms: -1,
-            buffer_size: 256,
+            buffer_capacity: 256,
         }
     }
 }
@@ -156,9 +160,9 @@ impl Default for EpollConfig {
 #[cfg(test)]
 mod tests {
     use handler::Handler;
-    use ::std::sync::mpsc::*;
     use nix::fcntl::O_NONBLOCK;
     use nix::unistd;
+    use ::std::sync::mpsc::*;
     use super::*;
 
     struct ChannelHandler {
@@ -187,10 +191,15 @@ mod tests {
 
         let config = EpollConfig {
             loop_ms: 10,
-            buffer_size: 100,
+            buffer_capacity: 100,
         };
 
-        let mut poll = Epoll::new_with(config, |_| ChannelHandler { tx: tx }).unwrap();
+        let mut poll = Epoll::new_with(config, |_| {
+                ChannelHandler {
+                    tx: tx,
+                }
+            })
+            .unwrap();
 
         let (rfd, wfd) = unistd::pipe2(O_NONBLOCK).unwrap();
 
