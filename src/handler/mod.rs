@@ -7,8 +7,12 @@ pub trait Handler {
     type Out;
 
     #[inline]
-    fn update(&mut self, epfd: EpollFd);
-
-    #[inline]
     fn ready(&mut self, Self::In) -> Self::Out;
+}
+
+pub trait Root
+    where Self: Handler,
+{
+    #[inline]
+    fn update(&mut self, epfd: EpollFd);
 }

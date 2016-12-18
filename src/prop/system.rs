@@ -135,8 +135,6 @@ impl<S, R> Handler for System<S, R>
     type In = EpollEvent;
     type Out = EpollCmd;
 
-    fn update(&mut self, _: EpollFd) {}
-
     fn ready(&mut self, ev: EpollEvent) -> EpollCmd {
         if ev.data == self.sigfd.as_raw_fd() as u64 {
             match self.sigfd.read_signal() {

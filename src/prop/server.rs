@@ -1,7 +1,7 @@
 
 
 use error::*;
-use handler::Handler;
+use handler::{Handler, Root};
 use nix::sched;
 use nix::sys::signal;
 use nix::sys::signal::Signal;
@@ -17,7 +17,7 @@ use std::os::unix::io::RawFd;
 use std::thread;
 
 pub struct Server<H>
-    where H: Handler<In = EpollEvent, Out = EpollCmd> + Send + Clone + 'static,
+    where H: Handler<In = EpollEvent, Out = EpollCmd> + Root + Send + Clone + 'static,
 {
     srvfd: RawFd,
     epfd: EpollFd,
@@ -109,7 +109,7 @@ impl ServerConfig {
 }
 
 impl<H> Server<H>
-    where H: Handler<In = EpollEvent, Out = EpollCmd> + Send + Clone + 'static,
+    where H: Handler<In = EpollEvent, Out = EpollCmd> + Root + Send + Clone + 'static,
 {
     pub fn new_with<F>(config: ServerConfig, new_handler: F) -> Result<Server<H>>
         where F: FnOnce(EpollFd) -> H,
@@ -146,7 +146,7 @@ impl<H> Server<H>
 }
 
 impl<H> Prop for Server<H>
-    where H: Handler<In = EpollEvent, Out = EpollCmd> + Send + Clone + 'static,
+    where H: Handler<In = EpollEvent, Out = EpollCmd> + Root + Send + Clone + 'static,
 {
     type Root = H;
 
@@ -229,7 +229,7 @@ impl<H> Prop for Server<H>
 }
 
 impl<H> Drop for Server<H>
-    where H: Handler<In = EpollEvent, Out = EpollCmd> + Send + Clone + 'static,
+    where H: Handler<In = EpollEvent, Out = EpollCmd> + Root + Send + Clone + 'static,
 {
     fn drop(&mut self) {
         unistd::close(self.srvfd).unwrap();

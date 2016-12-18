@@ -1,6 +1,6 @@
 use error::*;
 
-use handler::Handler;
+use handler::{Handler, Root};
 use nix::sys::socket::*;
 
 use nix::unistd::close as rclose;
@@ -38,7 +38,9 @@ impl<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd> + Clone> Clone for SyncMux<'p, 
     }
 }
 
-impl<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd>> SyncMux<'p, P> {
+impl<'p, P> SyncMux<'p, P>
+    where P: StaticProtocol<'p, MuxEvent, MuxCmd> + 'static,
+{
     pub fn new(max_handlers: usize, interests: EpollEventKind, epfd: EpollFd, protocol: P) -> SyncMux<'p, P> {
         SyncMux {
             epfd: epfd,
@@ -123,16 +125,19 @@ impl<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd>> SyncMux<'p, P> {
         }
     }
 }
+impl<'p, P> Root for SyncMux<'p, P>
+    where P: StaticProtocol<'p, MuxEvent, MuxCmd>,
+{
+    fn update(&mut self, epfd: EpollFd) {
+        self.epfd = epfd;
+    }
+}
 
 impl<'p, P> Handler for SyncMux<'p, P>
     where P: StaticProtocol<'p, MuxEvent, MuxCmd>,
 {
     type In = EpollEvent;
     type Out = EpollCmd;
-
-    fn update(&mut self, epfd: EpollFd) {
-        self.epfd = epfd;
-    }
 
     fn ready(&mut self, event: EpollEvent) -> EpollCmd {
 
