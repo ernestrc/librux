@@ -2,9 +2,6 @@ pub use nix::Error::Sys as SysError;
 pub use nix::errno::*;
 
 error_chain! {
-    types {
-        Error, ErrorKind, ChainErr, Result;
-    }
 
     links { }
 

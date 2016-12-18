@@ -1,10 +1,14 @@
 use error::{Result, ErrorKind};
 use std::cmp;
+use std::io;
+use std::ptr;
 
 #[derive(Debug, Clone)]
 pub struct ByteBuffer {
     next_write: usize,
     next_read: usize,
+    // last_write_size: usize,
+    // last_read_size: usize,
     capacity: usize,
     buf: Vec<u8>,
 }
@@ -30,6 +34,16 @@ impl ByteBuffer {
     }
 
     #[inline]
+    pub fn next_write(&self) -> usize {
+        self.next_write
+    }
+
+    #[inline]
+    pub fn next_read(&self) -> usize {
+        self.next_read
+    }
+
+    #[inline]
     pub fn writable(&self) -> usize {
         self.capacity - self.next_write
     }
@@ -49,9 +63,34 @@ impl ByteBuffer {
         let len = b.len();
         let wlen = self.next_write + len;
         if wlen > self.capacity {
+            // TODO shrink left
             Err(ErrorKind::BufferOverflowError(self.capacity).into())
         } else {
             self.buf[self.next_write..wlen].copy_from_slice(b);
+            self.extend(len);
+            Ok(len)
+        }
+    }
+
+    pub fn write_at(&mut self, index: usize, b: &[u8]) -> Result<usize> {
+        assert!(index >= self.next_read && index < self.next_write);
+
+        let len = b.len();
+        let wlen = self.next_write + len;
+        if wlen > self.capacity {
+            // TODO shrink left
+            Err(ErrorKind::BufferOverflowError(self.capacity).into())
+        } else {
+            unsafe {
+                {
+                    let p = self.buf.as_mut_ptr();
+                    ptr::copy(p.offset(index as isize),
+                              p.offset((index + len) as isize),
+                              wlen);
+                }
+            }
+
+            self.buf[index..index + len].copy_from_slice(b);
             self.extend(len);
             Ok(len)
         }
@@ -73,7 +112,7 @@ impl ByteBuffer {
 
     #[inline]
     pub fn mut_slice<'a>(&'a mut self, offset: usize) -> &'a mut [u8] {
-        &mut self.buf[self.next_read + offset..self.next_write]
+        &mut self.buf[self.next_write + offset..]
     }
 
     #[inline]
@@ -93,6 +132,27 @@ impl ByteBuffer {
     pub fn clear(&mut self) {
         self.next_read = 0;
         self.next_write = 0;
+    }
+}
+
+impl io::Write for ByteBuffer {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self.write(buf) {
+            Ok(u) => Ok(u),
+            Err(e) => Err(io::Error::new(io::ErrorKind::Other, format!("io::Write: {}", e))),
+        }
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl io::Read for ByteBuffer {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self.read(buf) {
+            Ok(u) => Ok(u),
+            Err(e) => Err(io::Error::new(io::ErrorKind::Other, format!("io::Read: {}", e))),
+        }
     }
 }
 
@@ -224,6 +284,27 @@ mod tests {
     }
 
     #[test]
+    fn write_at_index() {
+        const SIZE: usize = 32;
+        let mut buffer = ByteBuffer::with_capacity(SIZE);
+
+        let a = [1, 2, 3];
+        buffer.write(&a).unwrap();
+
+        assert_eq!(buffer.readable(), 3);
+        assert_eq!(buffer.writable(), SIZE - 3);
+
+        buffer.write_at(1, &[2, 2]).unwrap();
+        assert_eq!(buffer.readable(), 5);
+        assert_eq!(buffer.writable(), SIZE - 5);
+
+        let mut b = [0; 5];
+        let bcnt = buffer.read(&mut b).unwrap();
+        assert_eq!(b, [1, 2, 2, 2, 3]);
+        assert_eq!(bcnt, 5);
+    }
+
+    #[test]
     fn share_read_ref() {
         let mut buffer = ByteBuffer::with_capacity(32);
 
@@ -266,20 +347,36 @@ mod tests {
 
     #[test]
     fn overflow_error() {
-        let mut buffer = ByteBuffer {
-            next_read: 0,
-            capacity: 5,
-            next_write: 0,
-            buf: Vec::with_capacity(5),
-        };
+        {
+            let mut buffer = ByteBuffer {
+                next_read: 0,
+                capacity: 5,
+                next_write: 0,
+                buf: Vec::with_capacity(5),
+            };
 
-        let a = [1, 2, 3, 4, 5, 6];
-        let res = buffer.write(&a);
+            let a = [1, 2, 3, 4, 5, 6];
+            let res = buffer.write(&a);
 
-        assert!(res.is_err());
-        match res.err().unwrap().into_kind() {
-            ErrorKind::BufferOverflowError(max) => assert_eq!(max, 5),
-            e => panic!("different error: {:?}", e),
+            assert!(res.is_err());
+            match res.err().unwrap().kind() {
+                &ErrorKind::BufferOverflowError(max) => assert_eq!(max, 5),
+                e => panic!("different error: {:?}", e),
+            }
+        }
+
+        {
+            let mut buffer = ByteBuffer::with_capacity(5);
+
+            let a = [1, 2, 3, 4, 5];
+            buffer.write(&a).unwrap();
+            let res = buffer.write(&[1]);
+
+            assert!(res.is_err());
+            match res.err().unwrap().kind() {
+                &ErrorKind::BufferOverflowError(max) => assert_eq!(max, 5),
+                e => panic!("different error: {:?}", e),
+            }
         }
     }
 }

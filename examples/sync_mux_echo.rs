@@ -39,8 +39,7 @@ impl<'p> Handler for EchoHandler<'p> {
         let kind = event.kind;
 
         if kind.contains(EPOLLHUP) || kind.contains(EPOLLRDHUP) {
-            perror!("close: {}", close(fd));
-            return MuxCmd::Clear;
+            return MuxCmd::Close;
         }
 
         if kind.contains(EPOLLERR) {

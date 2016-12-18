@@ -16,7 +16,7 @@ pub struct MuxEvent {
 }
 
 pub enum MuxCmd {
-    Clear,
+    Close,
     Keep,
 }
 
@@ -155,7 +155,8 @@ impl<'p, P> Handler for SyncMux<'p, P>
             kind: event.events,
             fd: fd,
         }) {
-            MuxCmd::Clear => {
+            MuxCmd::Close => {
+                perror!("unistd::close", rclose(fd));
                 let handler = self.handlers.remove(idx).unwrap();
                 self.protocol.done(handler, idx);
             }
