@@ -9,10 +9,10 @@ error_chain! {
     links { }
 
     foreign_links {
-        ::std::io::Error, IoError;
-        ::std::net::AddrParseError, ParseAddr;
-        ::std::string::FromUtf8Error, Utf8Error;
-        ::nix::Error, NixError;
+        IoError(::std::io::Error);
+        ParseAddr(::std::net::AddrParseError);
+        Utf8Error(::std::string::FromUtf8Error);
+        NixError(::nix::Error);
     }
 
     errors {
