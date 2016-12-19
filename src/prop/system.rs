@@ -20,7 +20,7 @@ pub struct SystemBuilder<S, P> {
 }
 
 impl<S, P> SystemBuilder<S, P>
-    where S: Handler<In = Signal, Out = EpollCmd>,
+    where S: Handler<Signal, EpollCmd>,
           P: Prop + Send + 'static,
 {
     pub fn with_sig_handler(self, handler: S) -> SystemBuilder<S, P> {
@@ -66,7 +66,7 @@ impl<P> System<DefaultSigHandler, P>
 
 impl<P, S> System<S, P>
     where P: Prop + Send + 'static,
-          S: Handler<In = Signal, Out = EpollCmd>,
+          S: Handler<Signal, EpollCmd>,
 {
     pub fn start(mut prop: P, sig_h: S, mut sig_mask: SigSet) -> Result<()> {
 
@@ -128,12 +128,10 @@ impl<L, I> Drop for System<L, I> {
     }
 }
 
-impl<S, R> Handler for System<S, R>
-    where S: Handler<In = Signal, Out = EpollCmd>,
+impl<S, R> Handler<EpollEvent, EpollCmd> for System<S, R>
+    where S: Handler<Signal, EpollCmd>,
           R: Prop,
 {
-    type In = EpollEvent;
-    type Out = EpollCmd;
 
     fn ready(&mut self, ev: EpollEvent) -> EpollCmd {
         if ev.data == self.sigfd.as_raw_fd() as u64 {

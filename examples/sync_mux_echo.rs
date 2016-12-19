@@ -26,9 +26,7 @@ pub struct EchoHandler<'p> {
     buffer: &'p mut ByteBuffer,
 }
 
-impl<'p> Handler for EchoHandler<'p> {
-    type In = MuxEvent;
-    type Out = MuxCmd;
+impl<'p> Handler<MuxEvent, MuxCmd> for EchoHandler<'p> {
 
     fn ready(&mut self, event: MuxEvent) -> MuxCmd {
 

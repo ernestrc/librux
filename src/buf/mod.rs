@@ -7,10 +7,13 @@ use std::ptr;
 pub struct ByteBuffer {
     next_write: usize,
     next_read: usize,
-    // last_write_size: usize,
-    // last_read_size: usize,
     capacity: usize,
     buf: Vec<u8>,
+}
+
+pub struct Mark {
+    pub next_write: usize,
+    pub next_read: usize
 }
 
 impl ByteBuffer {
@@ -24,6 +27,24 @@ impl ByteBuffer {
     }
 
     #[inline]
+    pub fn mark(&self) -> Mark {
+        Mark {
+            next_write: self.next_write,
+            next_read: self.next_read,
+        }
+    }
+    #[inline]
+    pub fn reset(&mut self, mark: Mark) {
+        self.next_write = mark.next_write;
+        self.next_read = mark.next_read;
+    }
+    #[inline]
+    pub fn reserve(&mut self, additional: usize) {
+        self.buf.append(&mut vec!(0_u8; additional));
+        self.capacity += additional;
+    }
+
+    #[inline]
     pub fn is_readable(&self) -> bool {
         self.readable() > 0
     }
@@ -31,16 +52,6 @@ impl ByteBuffer {
     #[inline]
     pub fn is_writable(&self) -> bool {
         self.writable() > 0
-    }
-
-    #[inline]
-    pub fn next_write(&self) -> usize {
-        self.next_write
-    }
-
-    #[inline]
-    pub fn next_read(&self) -> usize {
-        self.next_read
     }
 
     #[inline]
@@ -64,7 +75,7 @@ impl ByteBuffer {
         let wlen = self.next_write + len;
         if wlen > self.capacity {
             // TODO shrink left
-            Err(ErrorKind::BufferOverflowError(self.capacity).into())
+            bail!(ErrorKind::BufferOverflowError(self.capacity))
         } else {
             self.buf[self.next_write..wlen].copy_from_slice(b);
             self.extend(len);
@@ -79,7 +90,7 @@ impl ByteBuffer {
         let wlen = self.next_write + len;
         if wlen > self.capacity {
             // TODO shrink left
-            Err(ErrorKind::BufferOverflowError(self.capacity).into())
+            bail!(ErrorKind::BufferOverflowError(self.capacity))
         } else {
             unsafe {
                 {
@@ -343,6 +354,35 @@ mod tests {
         let ccnt = buffer.read(&mut c).unwrap();
         assert_eq!(c, [4, 5, 1, 2, 3]);
         assert_eq!(ccnt, 5);
+    }
+
+    #[test]
+    fn reserves_additional_capacity() {
+        let mut buffer = ByteBuffer::with_capacity(5);
+
+        let a = [1, 2, 3, 4, 5];
+        buffer.write(&a).unwrap();
+        let mut res = buffer.write(&[1]);
+
+        assert!(res.is_err());
+        match res.err().unwrap().kind() {
+            &ErrorKind::BufferOverflowError(max) => assert_eq!(max, 5),
+            e => panic!("different error: {:?}", e),
+        }
+
+        buffer.reserve(1);
+        res = buffer.write(&[6]);
+
+        assert!(res.is_ok());
+
+        assert_eq!(res.unwrap(), 1);
+        assert_eq!(buffer.readable(), 6);
+        assert_eq!(buffer.writable(), 0);
+
+        let mut b = [0; 6];
+        buffer.read(&mut b).unwrap();
+
+        assert_eq!(b, [1,2,3,4,5,6]);
     }
 
     #[test]

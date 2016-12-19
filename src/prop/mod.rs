@@ -9,7 +9,7 @@ pub mod signals;
 use self::signals::SigSet;
 
 pub trait Prop {
-    type EpollHandler: Handler<In = EpollEvent, Out = EpollCmd>;
+    type EpollHandler: Handler<EpollEvent, EpollCmd>;
 
     fn get_epoll_config(&self) -> EpollConfig;
 

@@ -5,10 +5,7 @@ use poll::EpollCmd;
 
 pub struct DefaultSigHandler;
 
-impl Handler for DefaultSigHandler {
-    type In = Signal;
-    type Out = EpollCmd;
-
+impl Handler<Signal, EpollCmd> for DefaultSigHandler {
     fn ready(&mut self, _: Signal) -> EpollCmd {
         EpollCmd::Shutdown
     }

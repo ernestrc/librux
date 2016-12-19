@@ -16,7 +16,7 @@ error_chain! {
 
         BufferOverflowError(max: usize) {
             description("Buffer overflow error")
-                display("Buffer exceeded max of {} bytes", max)
+                display("BufferOverflowError: Buffer exceeded max of {} bytes", max)
         }
     }
 }

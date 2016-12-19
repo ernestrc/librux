@@ -10,16 +10,19 @@ use slab::Slab;
 use std::mem;
 use std::os::unix::io::RawFd;
 
+#[derive(Debug, Clone)]
 pub struct MuxEvent {
     pub kind: EpollEventKind,
     pub fd: RawFd,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum MuxCmd {
     Close,
     Keep,
 }
 
+#[derive(Debug)]
 pub struct SyncMux<'p, P: StaticProtocol<'p, MuxEvent, MuxCmd> + 'static> {
     epfd: EpollFd,
     handlers: Slab<P::H, usize>,
@@ -133,12 +136,9 @@ impl<'p, P> Reset for SyncMux<'p, P>
     }
 }
 
-impl<'p, P> Handler for SyncMux<'p, P>
+impl<'p, P> Handler<EpollEvent, EpollCmd> for SyncMux<'p, P>
     where P: StaticProtocol<'p, MuxEvent, MuxCmd>,
 {
-    type In = EpollEvent;
-    type Out = EpollCmd;
-
     fn ready(&mut self, event: EpollEvent) -> EpollCmd {
 
         // FIXME: solve with associated lifetimes

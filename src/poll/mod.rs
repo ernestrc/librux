@@ -45,7 +45,7 @@ pub enum EpollCmd {
 
 unsafe impl<H> Send for Epoll<H> {}
 
-impl<H: Handler<In = EpollEvent, Out = EpollCmd>> Epoll<H> {
+impl<H: Handler<EpollEvent, EpollCmd>> Epoll<H> {
     pub fn from_fd(epfd: EpollFd, handler: H, config: EpollConfig) -> Epoll<H> {
         Epoll {
             epfd: epfd,
@@ -91,6 +91,8 @@ impl<H: Handler<In = EpollEvent, Out = EpollCmd>> Epoll<H> {
         }
     }
 }
+
+//impl_fn_handler!(EpollEvent, EpollCmd);
 
 impl<H> Drop for Epoll<H> {
     fn drop(&mut self) {
@@ -169,9 +171,7 @@ mod tests {
         tx: Sender<EpollEvent>,
     }
 
-    impl Handler for ChannelHandler {
-        type In = EpollEvent;
-        type Out = EpollCmd;
+    impl Handler<EpollEvent, EpollCmd> for ChannelHandler {
 
         fn ready(&mut self, events: EpollEvent) -> EpollCmd {
             if self.tx.send(events).is_ok() {

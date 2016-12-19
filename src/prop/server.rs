@@ -17,7 +17,7 @@ use std::os::unix::io::RawFd;
 use std::thread;
 
 pub struct Server<H>
-    where H: Handler<In = EpollEvent, Out = EpollCmd> + Reset + Send + Clone + 'static,
+    where H: Handler<EpollEvent, EpollCmd> + Reset + Send + Clone + 'static,
 {
     srvfd: RawFd,
     epfd: EpollFd,
@@ -109,7 +109,7 @@ impl ServerConfig {
 }
 
 impl<H> Server<H>
-    where H: Handler<In = EpollEvent, Out = EpollCmd> + Reset + Send + Clone + 'static,
+    where H: Handler<EpollEvent, EpollCmd> + Reset + Send + Clone + 'static,
 {
     pub fn new_with<F>(config: ServerConfig, new_handler: F) -> Result<Server<H>>
         where F: FnOnce(EpollFd) -> H,
@@ -146,7 +146,7 @@ impl<H> Server<H>
 }
 
 impl<H> Prop for Server<H>
-    where H: Handler<In = EpollEvent, Out = EpollCmd> + Reset + Send + Clone + 'static,
+    where H: Handler<EpollEvent, EpollCmd> + Reset + Send + Clone + 'static,
 {
     type EpollHandler = H;
 
@@ -229,7 +229,7 @@ impl<H> Prop for Server<H>
 }
 
 impl<H> Drop for Server<H>
-    where H: Handler<In = EpollEvent, Out = EpollCmd> + Reset + Send + Clone + 'static,
+    where H: Handler<EpollEvent, EpollCmd> + Reset + Send + Clone + 'static,
 {
     fn drop(&mut self) {
         unistd::close(self.srvfd).unwrap();

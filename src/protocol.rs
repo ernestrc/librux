@@ -17,7 +17,7 @@ pub enum Position<P> {
 pub trait StaticProtocol<'p, In, Out>
     where Self: MuxProtocol + 'p,
 {
-    type H: Handler<In = In, Out = Out>;
+    type H: Handler<In, Out>;
 
     fn done(&mut self, handler: Self::H, index: usize);
     fn get_handler(&'p mut self, p: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Self::H;
@@ -70,9 +70,7 @@ mod tests {
         on_writable: bool,
     }
 
-    impl Handler for TestHandler {
-        type In = EpollEvent;
-        type Out = EpollCmd;
+    impl Handler<EpollEvent, EpollCmd> for TestHandler {
 
         fn ready(&mut self, e: EpollEvent) -> EpollCmd {
             let kind = e.events;
@@ -103,7 +101,7 @@ mod tests {
 
     impl<'p> StaticProtocol<'p, EpollEvent, EpollCmd> for TestMuxProtocol {
         type H = TestHandler;
-        fn done(&mut self, handler: Self::H, index: usize) {}
+        fn done(&mut self, _: Self::H, _: usize) {}
 
         fn get_handler(&mut self, _: Position<usize>, _: EpollFd, _: usize) -> TestHandler {
             TestHandler {
