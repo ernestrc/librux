@@ -1,6 +1,6 @@
 use error::*;
 
-use handler::{Handler, Root};
+use handler::{Handler, Reset};
 use nix::sys::socket::*;
 
 use nix::unistd::close as rclose;
@@ -125,10 +125,10 @@ impl<'p, P> SyncMux<'p, P>
         }
     }
 }
-impl<'p, P> Root for SyncMux<'p, P>
+impl<'p, P> Reset for SyncMux<'p, P>
     where P: StaticProtocol<'p, MuxEvent, MuxCmd>,
 {
-    fn update(&mut self, epfd: EpollFd) {
+    fn reset(&mut self, epfd: EpollFd) {
         self.epfd = epfd;
     }
 }

@@ -1,7 +1,7 @@
 
 
 use error::*;
-use handler::{Handler, Root};
+use handler::{Handler, Reset};
 use nix::sched;
 use nix::sys::signal;
 use nix::sys::signal::Signal;
@@ -17,7 +17,7 @@ use std::os::unix::io::RawFd;
 use std::thread;
 
 pub struct Server<H>
-    where H: Handler<In = EpollEvent, Out = EpollCmd> + Root + Send + Clone + 'static,
+    where H: Handler<In = EpollEvent, Out = EpollCmd> + Reset + Send + Clone + 'static,
 {
     srvfd: RawFd,
     epfd: EpollFd,
@@ -109,7 +109,7 @@ impl ServerConfig {
 }
 
 impl<H> Server<H>
-    where H: Handler<In = EpollEvent, Out = EpollCmd> + Root + Send + Clone + 'static,
+    where H: Handler<In = EpollEvent, Out = EpollCmd> + Reset + Send + Clone + 'static,
 {
     pub fn new_with<F>(config: ServerConfig, new_handler: F) -> Result<Server<H>>
         where F: FnOnce(EpollFd) -> H,
@@ -146,15 +146,15 @@ impl<H> Server<H>
 }
 
 impl<H> Prop for Server<H>
-    where H: Handler<In = EpollEvent, Out = EpollCmd> + Root + Send + Clone + 'static,
+    where H: Handler<In = EpollEvent, Out = EpollCmd> + Reset + Send + Clone + 'static,
 {
-    type Root = H;
+    type EpollHandler = H;
 
     fn get_epoll_config(&self) -> EpollConfig {
         self.epoll_config
     }
 
-    fn setup(&mut self, mask: SigSet) -> Result<Epoll<Self::Root>> {
+    fn setup(&mut self, mask: SigSet) -> Result<Epoll<Self::EpollHandler>> {
 
         eintr!(bind, "bind", self.srvfd, &self.sockaddr)?;
         info!("bind: fd {} to {}", self.srvfd, self.sockaddr);
@@ -185,7 +185,7 @@ impl<H> Prop for Server<H>
 
             let mut handler = self.template.clone();
 
-            handler.update(epfd);
+            handler.reset(epfd);
 
             thread::spawn(move || {
                 // add the set of signals to the signal mask for all threads
@@ -229,7 +229,7 @@ impl<H> Prop for Server<H>
 }
 
 impl<H> Drop for Server<H>
-    where H: Handler<In = EpollEvent, Out = EpollCmd> + Root + Send + Clone + 'static,
+    where H: Handler<In = EpollEvent, Out = EpollCmd> + Reset + Send + Clone + 'static,
 {
     fn drop(&mut self) {
         unistd::close(self.srvfd).unwrap();

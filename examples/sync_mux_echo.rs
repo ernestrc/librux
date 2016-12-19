@@ -4,12 +4,11 @@ extern crate log;
 extern crate rux;
 extern crate env_logger;
 
-use rux::{send as rsend, recv as rrecv, close};
+use rux::{send as rsend, recv as rrecv};
 use rux::handler::*;
 use rux::protocol::*;
 use rux::poll::*;
 use rux::buf::ByteBuffer;
-use rux::error::*;
 use rux::sys::socket::*;
 use rux::prop::server::*;
 use rux::handler::mux::{SyncMux, MuxEvent, MuxCmd};
@@ -30,8 +29,6 @@ pub struct EchoHandler<'p> {
 impl<'p> Handler for EchoHandler<'p> {
     type In = MuxEvent;
     type Out = MuxCmd;
-
-    fn update(&mut self, _: EpollFd) {}
 
     fn ready(&mut self, event: MuxEvent) -> MuxCmd {
 

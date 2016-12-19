@@ -173,8 +173,6 @@ mod tests {
         type In = EpollEvent;
         type Out = EpollCmd;
 
-        fn update(&mut self, _: EpollFd) {}
-
         fn ready(&mut self, events: EpollEvent) -> EpollCmd {
             if self.tx.send(events).is_ok() {
                 return EpollCmd::Shutdown;

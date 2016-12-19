@@ -10,9 +10,9 @@ pub trait Handler {
     fn ready(&mut self, Self::In) -> Self::Out;
 }
 
-pub trait Root
+pub trait Reset
     where Self: Handler,
 {
     #[inline]
-    fn update(&mut self, epfd: EpollFd);
+    fn reset(&mut self, epfd: EpollFd);
 }

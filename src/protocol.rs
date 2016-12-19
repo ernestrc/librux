@@ -20,8 +20,6 @@ pub trait StaticProtocol<'p, In, Out>
     type H: Handler<In = In, Out = Out>;
 
     fn done(&mut self, handler: Self::H, index: usize);
-
-    // TODO deprecate position ?
     fn get_handler(&'p mut self, p: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Self::H;
 }
 
@@ -75,8 +73,6 @@ mod tests {
     impl Handler for TestHandler {
         type In = EpollEvent;
         type Out = EpollCmd;
-
-        fn update(&mut self, _: EpollFd) {}
 
         fn ready(&mut self, e: EpollEvent) -> EpollCmd {
             let kind = e.events;
