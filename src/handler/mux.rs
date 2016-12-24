@@ -10,6 +10,9 @@ use slab::Slab;
 use std::mem;
 use std::os::unix::io::RawFd;
 
+// TODO consider not using a custom event:
+// handlers would be usable directly without mux
+// and possibly even other I/O frameworks like Mio.
 #[derive(Debug, Clone)]
 pub struct MuxEvent {
     pub kind: EpollEventKind,
@@ -19,7 +22,7 @@ pub struct MuxEvent {
 #[derive(Debug, Clone, PartialEq)]
 pub enum MuxCmd {
     Close,
-    Keep,
+    Keep
 }
 
 #[derive(Debug)]
@@ -139,6 +142,7 @@ impl<'p, P> Reset for SyncMux<'p, P>
 impl<'p, P> Handler<EpollEvent, EpollCmd> for SyncMux<'p, P>
     where P: StaticProtocol<'p, MuxEvent, MuxCmd>,
 {
+    // TODO should swap data for fd when MuxEvent is deprecated
     fn ready(&mut self, event: EpollEvent) -> EpollCmd {
 
         // FIXME: solve with associated lifetimes

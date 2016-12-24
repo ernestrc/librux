@@ -12,7 +12,7 @@ use rux::buf::ByteBuffer;
 use rux::sys::socket::*;
 use rux::prop::server::*;
 use rux::handler::mux::{SyncMux, MuxEvent, MuxCmd};
-use rux::prop::system::System;
+use rux::system::System;
 
 const BUF_SIZE: usize = 2048;
 const EPOLL_BUF_CAP: usize = 2048;
