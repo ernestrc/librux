@@ -11,8 +11,8 @@ use rux::poll::*;
 use rux::buf::ByteBuffer;
 use rux::sys::socket::*;
 use rux::prop::server::*;
-use rux::handler::mux::{SyncMux, MuxEvent, MuxCmd};
-use rux::prop::system::System;
+use rux::handler::mux::{SyncMux, MuxCmd};
+use rux::system::System;
 
 const BUF_SIZE: usize = 2048;
 const EPOLL_BUF_CAP: usize = 2048;
@@ -26,12 +26,12 @@ pub struct EchoHandler<'p> {
     buffer: &'p mut ByteBuffer,
 }
 
-impl<'p> Handler<MuxEvent, MuxCmd> for EchoHandler<'p> {
+impl<'p> Handler<EpollEvent, MuxCmd> for EchoHandler<'p> {
 
-    fn ready(&mut self, event: MuxEvent) -> MuxCmd {
+    fn ready(&mut self, event: EpollEvent) -> MuxCmd {
 
-        let fd = event.fd;
-        let kind = event.kind;
+        let fd = event.data as i32;
+        let kind = event.events;
 
         if kind.contains(EPOLLHUP) || kind.contains(EPOLLRDHUP) {
             return MuxCmd::Close;
@@ -64,14 +64,14 @@ struct EchoProtocol {
     buffers: Vec<ByteBuffer>,
 }
 
-impl<'p> StaticProtocol<'p, MuxEvent, MuxCmd> for EchoProtocol {
+impl<'p> StaticProtocol<'p, EpollEvent, MuxCmd> for EchoProtocol {
     type H = EchoHandler<'p>;
 
     fn done(&mut self, handler: EchoHandler, _: usize) {
         handler.buffer.clear();
     }
 
-    fn get_handler(&'p mut self, _: Position<usize>, _: EpollFd, index: usize) -> EchoHandler<'p> {
+    fn get_handler(&'p mut self, _: EpollFd, index: usize) -> EchoHandler<'p> {
         EchoHandler { buffer: &mut self.buffers[index] }
     }
 }

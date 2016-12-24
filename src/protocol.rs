@@ -3,15 +3,9 @@ use handler::Handler;
 use poll::EpollFd;
 use std::os::unix::io::RawFd;
 
-pub enum Action<P: MuxProtocol> {
-    New(P::Protocol, RawFd),
+pub enum Action {
     Notify(usize, RawFd),
-    NoAction(u64),
-}
-
-pub enum Position<P> {
-    Root,
-    Handler(P),
+    New(u64),
 }
 
 pub trait StaticProtocol<'p, In, Out>
@@ -20,7 +14,7 @@ pub trait StaticProtocol<'p, In, Out>
     type H: Handler<In, Out>;
 
     fn done(&mut self, handler: Self::H, index: usize);
-    fn get_handler(&'p mut self, p: Position<Self::Protocol>, epfd: EpollFd, id: usize) -> Self::H;
+    fn get_handler(&'p mut self, epfd: EpollFd, index: usize) -> Self::H;
 }
 
 pub trait MuxProtocol
@@ -29,25 +23,20 @@ pub trait MuxProtocol
     type Protocol: From<usize> + Into<usize>;
 
     #[inline]
-    fn encode(&self, action: Action<Self>) -> u64 {
+    fn encode(&self, action: Action) -> u64 {
         match action {
             Action::Notify(data, fd) => ((fd as u64) << 31) | ((data as u64) << 15) | 0,
-            Action::New(protocol, fd) => {
-                let protocol: usize = protocol.into();
-                ((fd as u64) << 31) | ((protocol as u64) << 15) | 1
-            }
-            Action::NoAction(data) => data,
+            Action::New(data) => data,
         }
     }
 
     #[inline]
-    fn decode(&self, data: u64) -> Action<Self> {
+    fn decode(&self, data: u64) -> Action {
         let arg1 = ((data >> 15) & 0xffff) as usize;
         let fd = (data >> 31) as i32;
         match data & 0x7fff {
             0 => Action::Notify(arg1, fd),
-            1 => Action::New(From::from(arg1), fd),
-            _ => Action::NoAction(data),
+            _ => Action::New(data),
         }
     }
 }
@@ -60,8 +49,6 @@ mod tests {
 
     #[derive(Clone)]
     struct TestMuxProtocol;
-
-    const PROTO1: usize = 1;
 
     struct TestHandler {
         on_close: bool,
@@ -103,7 +90,7 @@ mod tests {
         type H = TestHandler;
         fn done(&mut self, _: Self::H, _: usize) {}
 
-        fn get_handler(&mut self, _: Position<usize>, _: EpollFd, _: usize) -> TestHandler {
+        fn get_handler(&mut self, _: EpollFd, _: usize) -> TestHandler {
             TestHandler {
                 on_close: false,
                 on_error: false,
@@ -116,11 +103,10 @@ mod tests {
     #[test]
     fn decode_encode_new_action() {
         let test = TestMuxProtocol;
-        let data = test.encode(Action::New(PROTO1, ::std::i32::MAX));
+        let data = test.encode(Action::New(::std::u64::MAX));
 
-        if let Action::New(protocol, fd) = test.decode(data) {
-            assert!(protocol == PROTO1);
-            assert!(fd == ::std::i32::MAX);
+        if let Action::New(fd) = test.decode(data) {
+            assert!(fd == ::std::u64::MAX);
         } else {
             panic!("action is not Action::New")
         }
