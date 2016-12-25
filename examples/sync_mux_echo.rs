@@ -32,6 +32,7 @@ impl<'p> Handler<EpollEvent, MuxCmd> for EchoHandler<'p> {
     let kind = event.events;
 
     if kind.contains(EPOLLHUP) || kind.contains(EPOLLRDHUP) {
+      trace!("socket's fd {}: EPOLLHUP", fd);
       return MuxCmd::Close;
     }
 

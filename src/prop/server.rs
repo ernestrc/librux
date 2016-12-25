@@ -115,7 +115,6 @@ impl<H> Server<H>
     let srvfd = socket(family, socktype, sockflag, sockproto)? as i32;
 
     setsockopt(srvfd, sockopt::ReuseAddr, &true).unwrap();
-    setsockopt(srvfd, sockopt::ReusePort, &true).unwrap();
 
     Ok(Server {
       sockaddr: sockaddr,
