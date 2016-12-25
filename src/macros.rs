@@ -74,7 +74,7 @@ macro_rules! perror {
 //         {
 //             type In = $tin;
 //             type Out = $tout;
-// 
+//
 //             fn ready(&mut self, event: $tin) -> $tout {
 //                 self(event)
 //             }
