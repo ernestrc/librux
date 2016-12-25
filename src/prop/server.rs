@@ -13,7 +13,7 @@ use poll::*;
 use prop::Prop;
 use std::net;
 use std::net::ToSocketAddrs;
-use std::os::unix::io::RawFd;
+use ::RawFd;
 use std::thread;
 
 pub struct Server<H>

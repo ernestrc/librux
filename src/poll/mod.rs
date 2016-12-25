@@ -7,7 +7,7 @@ pub use nix::sys::epoll::{epoll_create, EpollEvent, EpollEventKind, EPOLLIN, EPO
 use nix::sys::epoll::{epoll_ctl, epoll_wait, EpollOp};
 use nix::unistd;
 use std::fmt;
-use std::os::unix::io::RawFd;
+use RawFd;
 
 lazy_static! {
     static ref NO_INTEREST: EpollEvent = {

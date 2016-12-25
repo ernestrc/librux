@@ -3,7 +3,7 @@ use handler::*;
 use nix::sys::socket::*;
 use poll::*;
 use slab::Slab;
-use std::os::unix::io::RawFd;
+use RawFd;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MuxCmd {
@@ -46,7 +46,7 @@ impl<'p, P> SyncMux<'p, P>
           data: encode(Action::Notify(i, clifd)),
         };
 
-        let h = factory.new(*epfd, i);
+        let h = factory.new(*epfd, i, clifd);
 
         entry.insert(h);
 
@@ -143,13 +143,13 @@ impl<'p, P> Handler<EpollEvent, EpollCmd> for SyncMux<'p, P>
   }
 }
 
-enum Action {
+pub enum Action {
   Notify(usize, RawFd),
   New(u64),
 }
 
 #[inline(always)]
-fn encode(action: Action) -> u64 {
+pub fn encode(action: Action) -> u64 {
   match action {
     Action::Notify(data, fd) => ((fd as u64) << 31) | ((data as u64) << 15) | 0,
     Action::New(data) => data,
@@ -157,7 +157,7 @@ fn encode(action: Action) -> u64 {
 }
 
 #[inline(always)]
-fn decode(data: u64) -> Action {
+pub fn decode(data: u64) -> Action {
   let arg1 = ((data >> 15) & 0xffff) as usize;
   let fd = (data >> 31) as i32;
   match data & 0x7fff {

@@ -26,7 +26,7 @@ pub use nix::sched;
 pub use nix::sys;
 pub use nix::unistd;
 pub use nix::unistd::close;
-use std::os::unix::io::RawFd;
+pub use std::os::unix::io::RawFd;
 
 #[inline]
 pub fn write(fd: RawFd, buf: &[u8]) -> Result<Option<usize>> {

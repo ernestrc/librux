@@ -12,6 +12,7 @@ use rux::poll::*;
 use rux::prop::server::*;
 use rux::sys::socket::*;
 use rux::system::System;
+use rux::RawFd;
 
 const BUF_SIZE: usize = 2048;
 const EPOLL_BUF_CAP: usize = 2048;
@@ -70,7 +71,7 @@ impl<'p> HandlerFactory<'p, EpollEvent, MuxCmd> for EchoProtocol {
     handler.buffer.clear();
   }
 
-  fn new(&'p mut self, _: EpollFd, index: usize) -> EchoHandler<'p> {
+  fn new(&'p mut self, _: EpollFd, index: usize, _: RawFd) -> EchoHandler<'p> {
     EchoHandler { buffer: &mut self.buffers[index] }
   }
 }

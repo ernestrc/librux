@@ -119,7 +119,7 @@ impl<P, S> System<S, P>
 impl<L, I> Drop for System<L, I> {
   fn drop(&mut self) {
     // signalfd is closed by the SignalFd struct
-    // and epfd is closed by EpollFd
+    // and epfd is closed by Epoll
   }
 }
 
