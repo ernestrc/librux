@@ -1,6 +1,7 @@
-use poll::EpollFd;
+mod factory;
 
-pub mod mux;
+use poll::EpollFd;
+pub use self::factory::HandlerFactory;
 
 pub trait Handler<In, Out> {
   #[inline]

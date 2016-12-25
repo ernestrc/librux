@@ -1,5 +1,3 @@
-
-
 use error::Result;
 use handler::Handler;
 
@@ -90,8 +88,6 @@ impl<H: Handler<EpollEvent, EpollCmd>> Epoll<H> {
     }
   }
 }
-
-// impl_fn_handler!(EpollEvent, EpollCmd);
 
 impl<H> Drop for Epoll<H> {
   fn drop(&mut self) {

@@ -7,10 +7,9 @@ extern crate env_logger;
 use rux::{send as rsend, recv as rrecv};
 use rux::buf::ByteBuffer;
 use rux::handler::*;
-use rux::handler::mux::{SyncMux, MuxCmd};
+use rux::mux::*;
 use rux::poll::*;
 use rux::prop::server::*;
-use rux::protocol::*;
 use rux::sys::socket::*;
 use rux::system::System;
 
@@ -63,20 +62,16 @@ struct EchoProtocol {
   buffers: Vec<ByteBuffer>,
 }
 
-impl<'p> StaticProtocol<'p, EpollEvent, MuxCmd> for EchoProtocol {
+impl<'p> HandlerFactory<'p, EpollEvent, MuxCmd> for EchoProtocol {
   type H = EchoHandler<'p>;
 
   fn done(&mut self, handler: EchoHandler, _: usize) {
     handler.buffer.clear();
   }
 
-  fn get_handler(&'p mut self, _: EpollFd, index: usize) -> EchoHandler<'p> {
+  fn new(&'p mut self, _: EpollFd, index: usize) -> EchoHandler<'p> {
     EchoHandler { buffer: &mut self.buffers[index] }
   }
-}
-
-impl MuxProtocol for EchoProtocol {
-  type Protocol = usize;
 }
 
 fn main() {
