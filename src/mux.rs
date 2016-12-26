@@ -1,9 +1,9 @@
+use RawFd;
 use error::*;
 use handler::*;
 use nix::sys::socket::*;
 use poll::*;
 use slab::Slab;
-use RawFd;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MuxCmd {
@@ -43,7 +43,7 @@ impl<'p, P> SyncMux<'p, P>
 
         let interest = EpollEvent {
           events: interests,
-          data: encode(Action::Notify(i, clifd)),
+          data: Action::encode(Action::Notify(i, clifd)),
         };
 
         let h = factory.new(*epfd, i, clifd);
@@ -69,7 +69,7 @@ impl<'p, P> SyncMux<'p, P>
             handlers: &mut Slab<P::H, usize>)
             -> Result<Option<(usize, RawFd)>> {
 
-    match decode(event.data) {
+    match Action::decode(event.data) {
       Action::Notify(i, fd) => Ok(Some((i, fd))),
       Action::New(data) => {
         let srvfd = data as i32;
@@ -129,16 +129,21 @@ impl<'p, P> Handler<EpollEvent, EpollCmd> for SyncMux<'p, P>
         }
       };
 
-    event.data = fd as u64;
-    match self.handlers[idx].ready(event) {
-      MuxCmd::Close => {
-        perror!("unistd::close", ::close(fd));
-        let handler = self.handlers.remove(idx).unwrap();
-        self.factory.done(handler, idx);
+    // FIXME: not optimal
+    match self.handlers.entry(idx) {
+      Some(mut entry) => {
+        event.data = fd as u64;
+        match entry.get_mut().ready(event) {
+          MuxCmd::Close => {
+            perror!("unistd::close", ::close(fd));
+            let handler = entry.remove();
+            self.factory.done(handler, idx);
+          }
+          _ => {}
+        }
       }
-      _ => {}
+      None => warn!("received EpollEvent for handler at index {:?}, but no handler found", idx),
     }
-
     EpollCmd::Poll
   }
 }
@@ -148,22 +153,34 @@ pub enum Action {
   New(u64),
 }
 
-#[inline(always)]
-pub fn encode(action: Action) -> u64 {
-  match action {
-    Action::Notify(data, fd) => ((fd as u64) << 31) | ((data as u64) << 15) | 0,
-    Action::New(data) => data,
+impl Action {
+  #[inline(always)]
+  pub fn encode(action: Action) -> u64 {
+    match action {
+      Action::Notify(data, fd) => ((fd as u64) << 31) | ((data as u64) << 15) | 0,
+      Action::New(data) => data,
+    }
+  }
+
+  #[inline(always)]
+  pub fn decode(data: u64) -> Action {
+    let arg1 = ((data >> 15) & 0xffff) as usize;
+    let fd = (data >> 31) as i32;
+    match data & 0x7fff {
+      0 => Action::Notify(arg1, fd),
+      _ => Action::New(data),
+    }
   }
 }
 
-#[inline(always)]
-pub fn decode(data: u64) -> Action {
-  let arg1 = ((data >> 15) & 0xffff) as usize;
-  let fd = (data >> 31) as i32;
-  match data & 0x7fff {
-    0 => Action::Notify(arg1, fd),
-    _ => Action::New(data),
-  }
+#[macro_export]
+macro_rules! keep {
+  ($cmd:expr) => {{
+    match $cmd {
+      e @ MuxCmd::Close => return e,
+      _ => {}
+    }
+  }}
 }
 
 #[cfg(test)]
