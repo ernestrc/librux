@@ -1,4 +1,4 @@
-# Rux
+# Rux [![Build Status](https://travis-ci.org/ernestrc/rux.svg)](https://travis-ci.org/ernestrc/rux)
 
 Experimental Linux I/O library
 

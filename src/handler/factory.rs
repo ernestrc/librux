@@ -1,6 +1,6 @@
+use RawFd;
 use handler::Handler;
 use poll::EpollFd;
-use RawFd;
 
 pub trait HandlerFactory<'p, In, Out> {
   type H: Handler<In, Out>;

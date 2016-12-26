@@ -1,5 +1,6 @@
 
 
+use ::RawFd;
 use error::*;
 use handler::{Handler, Reset};
 use nix::sched;
@@ -13,7 +14,6 @@ use poll::*;
 use prop::Prop;
 use std::net;
 use std::net::ToSocketAddrs;
-use ::RawFd;
 use std::thread;
 
 pub struct Server<H>

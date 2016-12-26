@@ -5,6 +5,7 @@ extern crate rux;
 extern crate env_logger;
 
 use rux::{send as rsend, recv as rrecv};
+use rux::RawFd;
 use rux::buf::ByteBuffer;
 use rux::handler::*;
 use rux::mux::*;
@@ -12,7 +13,6 @@ use rux::poll::*;
 use rux::prop::server::*;
 use rux::sys::socket::*;
 use rux::system::System;
-use rux::RawFd;
 
 const BUF_SIZE: usize = 2048;
 const EPOLL_BUF_CAP: usize = 2048;

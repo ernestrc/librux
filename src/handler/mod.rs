@@ -20,4 +20,3 @@ pub trait Reset {
   #[inline]
   fn reset(&mut self, epfd: EpollFd);
 }
-

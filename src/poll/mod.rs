@@ -1,3 +1,4 @@
+use RawFd;
 use error::Result;
 use handler::Handler;
 
@@ -7,7 +8,6 @@ pub use nix::sys::epoll::{epoll_create, EpollEvent, EpollEventKind, EPOLLIN, EPO
 use nix::sys::epoll::{epoll_ctl, epoll_wait, EpollOp};
 use nix::unistd;
 use std::fmt;
-use RawFd;
 
 lazy_static! {
     static ref NO_INTEREST: EpollEvent = {
