@@ -74,8 +74,8 @@ impl<H: Handler<EpollEvent, EpollCmd>> Epoll<H> {
     unsafe { self.buf.set_len(cnt) }
 
     {
-      for ev in self.buf.iter() {
-        if let EpollCmd::Shutdown = self.handler.ready(*ev) {
+      for ev in self.buf.drain(..) {
+        if let EpollCmd::Shutdown = self.handler.on_next(ev) {
           return;
         }
       }
@@ -165,7 +165,7 @@ mod tests {
   }
 
   impl Handler<EpollEvent, EpollCmd> for ChannelHandler {
-    fn ready(&mut self, events: EpollEvent) -> EpollCmd {
+    fn on_next(&mut self, events: EpollEvent) -> EpollCmd {
       if self.tx.send(events).is_ok() {
         return EpollCmd::Shutdown;
       }

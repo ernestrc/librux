@@ -127,7 +127,7 @@ impl<S, R> Handler<EpollEvent, EpollCmd> for System<S, R>
   where S: Handler<Signal, EpollCmd>,
         R: Prop,
 {
-  fn ready(&mut self, ev: EpollEvent) -> EpollCmd {
+  fn on_next(&mut self, ev: EpollEvent) -> EpollCmd {
     if ev.data == self.sigfd.as_raw_fd() as u64 {
       match self.sigfd.read_signal() {
         // TODO I/O thread panic recovery
@@ -139,8 +139,7 @@ impl<S, R> Handler<EpollEvent, EpollCmd> for System<S, R>
         //     return EpollCmd::Shutdown;
         // }
         Ok(Some(sig)) => {
-          match self.sig_h
-            .ready(Signal::from_c_int(sig.ssi_signo as i32).unwrap()) {
+          match self.sig_h.on_next(Signal::from_c_int(sig.ssi_signo as i32).unwrap()) {
             EpollCmd::Shutdown => {
               warn!("received signal {:?}. Shutting down ..", sig.ssi_signo);
               // terminate child processes

@@ -111,7 +111,7 @@ impl<'p, P> Reset for SyncMux<'p, P>
 impl<'p, P> Handler<EpollEvent, EpollCmd> for SyncMux<'p, P>
   where P: HandlerFactory<'p, EpollEvent, MuxCmd>,
 {
-  fn ready(&mut self, mut event: EpollEvent) -> EpollCmd {
+  fn on_next(&mut self, mut event: EpollEvent) -> EpollCmd {
 
     // FIXME: solve with associated lifetimes
     let proto: &'p mut P = unsafe { ::std::mem::transmute(&mut self.factory) };
@@ -133,7 +133,7 @@ impl<'p, P> Handler<EpollEvent, EpollCmd> for SyncMux<'p, P>
     match self.handlers.entry(idx) {
       Some(mut entry) => {
         event.data = fd as u64;
-        match entry.get_mut().ready(event) {
+        match entry.get_mut().on_next(event) {
           MuxCmd::Close => {
             perror!("unistd::close", ::close(fd));
             let handler = entry.remove();
@@ -185,11 +185,12 @@ macro_rules! keep {
 
 #[cfg(test)]
 mod tests {
+  use super::Action;
   #[test]
   fn decode_encode_new_action() {
-    let data = super::encode(super::Action::New(::std::u64::MAX));
+    let data = Action::encode(Action::New(::std::u64::MAX));
 
-    if let super::Action::New(fd) = super::decode(data) {
+    if let Action::New(fd) = Action::decode(data) {
       assert!(fd == ::std::u64::MAX);
     } else {
       panic!("action is not Action::New")
@@ -198,9 +199,9 @@ mod tests {
 
   #[test]
   fn decode_encode_notify_action() {
-    let data = super::encode(super::Action::Notify(10110, 0));
+    let data = Action::encode(Action::Notify(10110, 0));
 
-    if let super::Action::Notify(data, fd) = super::decode(data) {
+    if let Action::Notify(data, fd) = Action::decode(data) {
       assert!(data == 10110);
       assert!(fd == 0);
     } else {

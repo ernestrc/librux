@@ -27,7 +27,7 @@ pub struct EchoHandler<'p> {
 }
 
 impl<'p> Handler<EpollEvent, MuxCmd> for EchoHandler<'p> {
-  fn ready(&mut self, event: EpollEvent) -> MuxCmd {
+  fn on_next(&mut self, event: EpollEvent) -> MuxCmd {
 
     let fd = event.data as i32;
     let kind = event.events;
@@ -86,7 +86,7 @@ fn main() {
         EPOLL_LOOP_MS,
         MAX_CONN);
 
-  let config = ServerConfig::tcp(("127.0.0.1", 10001))
+  let config = ServerConfig::tcp(("127.0.0.1", 9999))
     .unwrap()
     .max_conn(MAX_CONN)
     .io_threads(1)

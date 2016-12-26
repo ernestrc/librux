@@ -6,7 +6,7 @@ use poll::EpollCmd;
 pub struct DefaultSigHandler;
 
 impl Handler<Signal, EpollCmd> for DefaultSigHandler {
-  fn ready(&mut self, _: Signal) -> EpollCmd {
+  fn on_next(&mut self, _: Signal) -> EpollCmd {
     EpollCmd::Shutdown
   }
 }
