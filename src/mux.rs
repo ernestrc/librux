@@ -5,12 +5,6 @@ use nix::sys::socket::*;
 use poll::*;
 use slab::Slab;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum MuxCmd {
-  Close,
-  Keep,
-}
-
 #[derive(Debug)]
 pub struct SyncMux<'p, H, P: HandlerFactory<'p, H, EpollEvent, MuxCmd> + 'p>
   where for<'h> H: Handler<'h, EpollEvent, MuxCmd>, // TODO + HandlerProp::get_interests()
@@ -170,6 +164,18 @@ impl<'p, H, P> Handler<'p, EpollEvent, EpollCmd> for SyncMux<'p, H, P>
     };
 
     EpollCmd::Poll
+  }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MuxCmd {
+  Close,
+  Keep,
+}
+
+impl Default for MuxCmd {
+  fn default() -> MuxCmd {
+    MuxCmd::Keep
   }
 }
 
