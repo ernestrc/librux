@@ -112,10 +112,9 @@ macro_rules! ok_or_close {
 }
 
 macro_rules! some_or_close {
-  ($cmd:expr, $clifd: expr, $msg: expr) => {{
+  ($cmd:expr, $clifd: expr) => {{
     match $cmd {
       None => {
-        error!("{}", $msg);
         close!($clifd);
       },
       Some(res) => res,
@@ -132,7 +131,7 @@ impl<'p, H, P> Handler<'p, EpollEvent, EpollCmd> for SyncMux<'p, H, P>
     match Action::decode(event.data) {
 
       Action::Notify(i, clifd) => {
-        let mut entry = some_or_close!(self.handlers.entry(i), clifd, "no handler at index={}");
+        let mut entry = some_or_close!(self.handlers.entry(i), clifd);
 
         event.data = clifd as u64;
 
@@ -148,9 +147,7 @@ impl<'p, H, P> Handler<'p, EpollEvent, EpollCmd> for SyncMux<'p, H, P>
           Ok(Some(clifd)) => {
             debug!("accept: accepted new tcp client {}", &clifd);
             // TODO grow slab
-            let entry = some_or_close!(self.handlers.vacant_entry(),
-                                       clifd,
-                                       "reached maximum number of handlers");
+            let entry = some_or_close!(self.handlers.vacant_entry(), clifd);
             let i = entry.index();
 
             let mut h = self.factory.new(self.epfd, i, clifd);
