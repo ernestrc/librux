@@ -12,83 +12,35 @@ pub enum MuxCmd {
 }
 
 #[derive(Debug)]
-pub struct SyncMux<'p, P: HandlerFactory<'p, EpollEvent, MuxCmd> + 'static> {
+pub struct SyncMux<'p, H, P: HandlerFactory<'p, H, EpollEvent, MuxCmd> + 'p>
+  where for<'h> H: Handler<'h, EpollEvent, MuxCmd>,
+{
   epfd: EpollFd,
-  handlers: Slab<P::H, usize>,
+  handlers: Slab<H, usize>,
   factory: P,
+  _data: ::std::marker::PhantomData<&'p bool>,
   interests: EpollEventKind,
 }
 
-impl<'p, P> SyncMux<'p, P>
-  where P: HandlerFactory<'p, EpollEvent, MuxCmd> + 'static,
+impl<'p, H, P> SyncMux<'p, H, P>
+  where for<'h> H: Handler<'h, EpollEvent, MuxCmd>,
+        P: HandlerFactory<'p, H, EpollEvent, MuxCmd> + 'static,
 {
   pub fn new(max_handlers: usize, interests: EpollEventKind, epfd: EpollFd, factory: P)
-             -> SyncMux<'p, P> {
+             -> SyncMux<'p, H, P> {
     SyncMux {
       epfd: epfd,
       handlers: Slab::with_capacity(max_handlers),
       factory: factory,
+      _data: ::std::marker::PhantomData {},
       interests: interests,
-    }
-  }
-
-  #[inline(always)]
-  fn new_handler(factory: &'p mut P, clifd: RawFd, interests: EpollEventKind, epfd: &EpollFd,
-                 handlers: &mut Slab<P::H, usize>)
-                 -> Result<(usize, RawFd)> {
-    match handlers.vacant_entry() {
-      Some(entry) => {
-
-        let i = entry.index();
-
-        let interest = EpollEvent {
-          events: interests,
-          data: Action::encode(Action::Notify(i, clifd)),
-        };
-
-        let h = factory.new(*epfd, i, clifd);
-
-        entry.insert(h);
-
-        match epfd.register(clifd, &interest) {
-          Ok(_) => {}
-          Err(e) => {
-            ::close(clifd).ok();
-            return Err(e);
-          }
-        };
-
-        Ok((i, clifd))
-      }
-      None => Err("reached maximum number of handlers".into()),
-    }
-  }
-
-  #[inline(always)]
-  fn decode(factory: &'p mut P, epfd: &EpollFd, event: EpollEvent, interests: EpollEventKind,
-            handlers: &mut Slab<P::H, usize>)
-            -> Result<Option<(usize, RawFd)>> {
-
-    match Action::decode(event.data) {
-      Action::Notify(i, fd) => Ok(Some((i, fd))),
-      Action::New(data) => {
-        let srvfd = data as i32;
-        match eintr!(accept, "accept", srvfd) {
-          Ok(Some(clifd)) => {
-            debug!("accept: accepted new tcp client {}", &clifd);
-            Self::new_handler(factory, clifd, interests, epfd, handlers)?;
-            Ok(None)
-          }
-          Ok(None) => Err("accept4: socket not ready".into()),
-          Err(e) => Err(e.into()),
-        }
-      }
     }
   }
 }
 
-impl<'p, P> Clone for SyncMux<'p, P>
-  where P: HandlerFactory<'p, EpollEvent, MuxCmd> + Clone,
+impl<'p, H, P> Clone for SyncMux<'p, H, P>
+  where for<'h> H: Handler<'h, EpollEvent, MuxCmd>,
+        P: HandlerFactory<'p, H, EpollEvent, MuxCmd> + Clone + 'static,
 {
   fn clone(&self) -> Self {
     SyncMux {
@@ -96,54 +48,128 @@ impl<'p, P> Clone for SyncMux<'p, P>
       handlers: Slab::with_capacity(self.handlers.capacity()),
       factory: self.factory.clone(),
       interests: self.interests.clone(),
+      _data: ::std::marker::PhantomData {},
     }
   }
 }
 
-impl<'p, P> Reset for SyncMux<'p, P>
-  where P: HandlerFactory<'p, EpollEvent, MuxCmd>,
+impl<'p, H, P> Reset for SyncMux<'p, H, P>
+  where for<'h> H: Handler<'h, EpollEvent, MuxCmd>,
+        P: HandlerFactory<'p, H, EpollEvent, MuxCmd> + 'static,
 {
   fn reset(&mut self, epfd: EpollFd) {
     self.epfd = epfd;
   }
 }
 
-impl<'p, P> Handler<EpollEvent, EpollCmd> for SyncMux<'p, P>
-  where P: HandlerFactory<'p, EpollEvent, MuxCmd>,
+#[macro_export]
+macro_rules! keep_or {
+  ($cmd:expr, $b: block) => {{
+    match $cmd {
+      MuxCmd::Close => $b,
+      _ => (),
+    }
+  }}
+}
+
+#[macro_export]
+macro_rules! keep {
+  ($cmd:expr) => {{
+    keep_or_return!($cmd, MuxCmd::Close)
+  }}
+}
+
+#[macro_export]
+macro_rules! keep_or_return {
+  ($cmd:expr, $ret: expr) => {{
+    keep_or!($cmd, { return $ret; });
+  }}
+}
+
+macro_rules! keep_or_close {
+  ($cmd:expr, $clifd: expr) => {{
+    keep_or!($cmd, { close!($clifd); });
+  }}
+}
+
+macro_rules! close {
+  ($clifd: expr) => {{
+    trace!("unistd::close {:?}", &$clifd);
+    perror!("unistd::close", ::close($clifd));
+    return EpollCmd::Poll;
+  }}
+}
+
+macro_rules! ok_or_close {
+  ($cmd:expr, $clifd: expr) => {{
+    match $cmd {
+      Err(e) => {
+        error!("{}", e);
+        close!($clifd);
+      },
+      Ok(res) => res,
+    }
+  }}
+}
+
+macro_rules! some_or_close {
+  ($cmd:expr, $clifd: expr, $msg: expr) => {{
+    match $cmd {
+      None => {
+        error!("{}", $msg);
+        close!($clifd);
+      },
+      Some(res) => res,
+    }
+  }}
+}
+
+impl<'p, H, P> Handler<'p, EpollEvent, EpollCmd> for SyncMux<'p, H, P>
+  where for<'h> H: Handler<'h, EpollEvent, MuxCmd>,
+        P: HandlerFactory<'p, H, EpollEvent, MuxCmd> + 'static,
 {
-  fn on_next(&mut self, mut event: EpollEvent) -> EpollCmd {
+  fn on_next(&'p mut self, mut event: EpollEvent) -> EpollCmd {
 
-    // FIXME: solve with associated lifetimes
-    let proto: &'p mut P = unsafe { ::std::mem::transmute(&mut self.factory) };
+    match Action::decode(event.data) {
 
-    let (idx, fd) =
-      match SyncMux::decode(proto, &self.epfd, event, self.interests, &mut self.handlers) {
-        Ok(Some((idx, fd))) => (idx, fd),
-        Ok(None) => {
-          // new connection
-          return EpollCmd::Poll;
-        }
-        Err(e) => {
-          report_err!("{}", e);
-          return EpollCmd::Poll;
-        }
-      };
+      Action::Notify(i, clifd) => {
+        let mut entry = some_or_close!(self.handlers.entry(i), clifd, "no handler at index={}");
 
-    // FIXME: not optimal
-    match self.handlers.entry(idx) {
-      Some(mut entry) => {
-        event.data = fd as u64;
-        match entry.get_mut().on_next(event) {
-          MuxCmd::Close => {
-            perror!("unistd::close", ::close(fd));
-            let handler = entry.remove();
-            self.factory.done(handler, idx);
+        event.data = clifd as u64;
+
+        keep_or!(entry.get_mut().on_next(event), {
+          self.factory.done(entry.remove(), i);
+          close!(clifd);
+        });
+      }
+
+      Action::New(data) => {
+        let srvfd = data as i32;
+        match eintr!(accept, "accept", srvfd) {
+          Ok(Some(clifd)) => {
+            debug!("accept: accepted new tcp client {}", &clifd);
+            // TODO grow slab
+            let entry = some_or_close!(self.handlers.vacant_entry(),
+                                       clifd,
+                                       "reached maximum number of handlers");
+            let i = entry.index();
+
+            let mut h = self.factory.new(self.epfd, i, clifd);
+
+            let mut event = EpollEvent { events: self.interests, data: clifd as u64 };
+            keep_or_close!(h.on_next(event), clifd);
+
+            event.data = Action::encode(Action::Notify(i, clifd));
+            ok_or_close!(self.epfd.register(clifd, &event), clifd);
+
+            entry.insert(h);
           }
-          _ => {}
+          Ok(None) => warn!("accept4: socket not ready"),
+          Err(e) => report_err!("accept4: {}", e.into()),
         }
       }
-      None => warn!("received EpollEvent for handler at index {:?}, but no handler found", idx),
-    }
+    };
+
     EpollCmd::Poll
   }
 }
@@ -171,16 +197,6 @@ impl Action {
       _ => Action::New(data),
     }
   }
-}
-
-#[macro_export]
-macro_rules! keep {
-  ($cmd:expr) => {{
-    match $cmd {
-      e @ MuxCmd::Close => return e,
-      _ => {}
-    }
-  }}
 }
 
 #[cfg(test)]

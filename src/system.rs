@@ -20,7 +20,7 @@ pub struct SystemBuilder<S, P> {
 }
 
 impl<S, P> SystemBuilder<S, P>
-  where S: Handler<Signal, EpollCmd>,
+  where for<'h> S: Handler<'h, Signal, EpollCmd>,
         P: Prop + Send + 'static,
 {
   pub fn with_sig_handler(self, handler: S) -> SystemBuilder<S, P> {
@@ -60,8 +60,8 @@ impl<P> System<DefaultSigHandler, P>
 }
 
 impl<P, S> System<S, P>
-  where P: Prop + Send + 'static,
-        S: Handler<Signal, EpollCmd>,
+  where for<'h> S: Handler<'h, Signal, EpollCmd>,
+        P: Prop + Send + 'static,
 {
   pub fn start(mut prop: P, sig_h: S, mut sig_mask: SigSet) -> Result<()> {
 
@@ -123,8 +123,8 @@ impl<L, I> Drop for System<L, I> {
   }
 }
 
-impl<S, R> Handler<EpollEvent, EpollCmd> for System<S, R>
-  where S: Handler<Signal, EpollCmd>,
+impl<'h, S, R> Handler<'h, EpollEvent, EpollCmd> for System<S, R>
+  where for <'s> S: Handler<'s, Signal, EpollCmd>,
         R: Prop,
 {
   fn on_next(&mut self, ev: EpollEvent) -> EpollCmd {

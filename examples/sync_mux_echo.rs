@@ -2,6 +2,7 @@
 extern crate log;
 #[macro_use]
 extern crate rux;
+extern crate num_cpus;
 extern crate env_logger;
 
 use rux::{send as rsend, recv as rrecv};
@@ -26,19 +27,22 @@ pub struct EchoHandler<'p> {
   buffer: &'p mut ByteBuffer,
 }
 
-impl<'p> Handler<EpollEvent, MuxCmd> for EchoHandler<'p> {
+/// NOTE: 'h is a late bound lifetime, required by HRTB/SyncMux
+/// check https://github.com/rust-lang/rfcs/blob/master/text/0387-higher-ranked-trait-bounds.md
+impl<'h, 'p> Handler<'h, EpollEvent, MuxCmd> for EchoHandler<'p> {
   fn on_next(&mut self, event: EpollEvent) -> MuxCmd {
 
     let fd = event.data as i32;
     let kind = event.events;
 
-    if kind.contains(EPOLLHUP) || kind.contains(EPOLLRDHUP) {
+    if kind.contains(EPOLLHUP) {
       trace!("socket's fd {}: EPOLLHUP", fd);
       return MuxCmd::Close;
     }
 
     if kind.contains(EPOLLERR) {
       error!("socket's fd {}: EPOLERR", fd);
+      return MuxCmd::Close;
     }
 
     if kind.contains(EPOLLIN) {
@@ -64,9 +68,7 @@ struct EchoProtocol {
   buffers: Vec<ByteBuffer>,
 }
 
-impl<'p> HandlerFactory<'p, EpollEvent, MuxCmd> for EchoProtocol {
-  type H = EchoHandler<'p>;
-
+impl<'p> HandlerFactory<'p, EchoHandler<'p>, EpollEvent, MuxCmd> for EchoProtocol {
   fn done(&mut self, handler: EchoHandler, _: usize) {
     handler.buffer.clear();
   }
@@ -89,7 +91,7 @@ fn main() {
   let config = ServerConfig::tcp(("127.0.0.1", 9999))
     .unwrap()
     .max_conn(MAX_CONN)
-    .io_threads(1)
+    .io_threads(::std::cmp::max(1, ::num_cpus::get() / 2))
     .epoll_config(EpollConfig {
       loop_ms: EPOLL_LOOP_MS,
       buffer_capacity: EPOLL_BUF_CAP,
@@ -98,7 +100,7 @@ fn main() {
   let protocol = EchoProtocol { buffers: vec!(ByteBuffer::with_capacity(BUF_SIZE); MAX_CONN) };
 
   let server = Server::new_with(config, |epfd| {
-      SyncMux::new(MAX_CONN, EPOLLIN | EPOLLOUT | EPOLLET | EPOLLRDHUP, epfd, protocol)
+      SyncMux::new(MAX_CONN, EPOLLIN | EPOLLOUT | EPOLLET, epfd, protocol)
     })
     .unwrap();
 
