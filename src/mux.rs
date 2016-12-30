@@ -156,7 +156,10 @@ impl<'p, H, P> Handler<'p, EpollEvent, EpollCmd> for SyncMux<'p, H, P>
 
             let mut h = self.factory.new(self.epfd, i, clifd);
 
-            let mut event = EpollEvent { events: self.interests, data: clifd as u64 };
+            let mut event = EpollEvent {
+              events: self.interests,
+              data: clifd as u64,
+            };
             keep_or_close!(h.on_next(event), clifd);
 
             event.data = Action::encode(Action::Notify(i, clifd));

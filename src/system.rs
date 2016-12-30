@@ -1,5 +1,3 @@
-
-
 use error::Result;
 use handler::*;
 
@@ -124,7 +122,7 @@ impl<L, I> Drop for System<L, I> {
 }
 
 impl<'h, S, R> Handler<'h, EpollEvent, EpollCmd> for System<S, R>
-  where for <'s> S: Handler<'s, Signal, EpollCmd>,
+  where for<'s> S: Handler<'s, Signal, EpollCmd>,
         R: Prop,
 {
   fn on_next(&mut self, ev: EpollEvent) -> EpollCmd {
