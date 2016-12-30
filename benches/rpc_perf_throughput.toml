@@ -3,7 +3,7 @@
 # use-case: measure the peak echo rate for a single connection with minimal payload
 
 [general]
-threads = 4
+threads = 3
 connections = 50
 duration = 10
 windows = 1

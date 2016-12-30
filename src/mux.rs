@@ -13,7 +13,7 @@ pub enum MuxCmd {
 
 #[derive(Debug)]
 pub struct SyncMux<'p, H, P: HandlerFactory<'p, H, EpollEvent, MuxCmd> + 'p>
-  where for<'h> H: Handler<'h, EpollEvent, MuxCmd>,
+  where for<'h> H: Handler<'h, EpollEvent, MuxCmd>, // TODO + HandlerProp::get_interests()
 {
   epfd: EpollFd,
   handlers: Slab<H, usize>,
@@ -94,7 +94,6 @@ macro_rules! keep_or_close {
 
 macro_rules! close {
   ($clifd: expr) => {{
-    trace!("unistd::close {:?}", &$clifd);
     perror!("unistd::close", ::close($clifd));
     return EpollCmd::Poll;
   }}
@@ -167,7 +166,7 @@ impl<'p, H, P> Handler<'p, EpollEvent, EpollCmd> for SyncMux<'p, H, P>
 
             entry.insert(h);
           }
-          Ok(None) => warn!("accept4: socket not ready"),
+          Ok(None) => debug!("accept4: socket not ready"),
           Err(e) => report_err!("accept4: {}", e.into()),
         }
       }

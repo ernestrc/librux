@@ -111,21 +111,18 @@ impl EpollFd {
 
   #[inline(always)]
   pub fn reregister(&self, fd: RawFd, interest: &EpollEvent) -> Result<()> {
-    trace!("reregister()");
     try!(self.ctl(EpollOp::EpollCtlMod, interest, fd));
     Ok(())
   }
 
   #[inline(always)]
   pub fn register(&self, fd: RawFd, interest: &EpollEvent) -> Result<()> {
-    trace!("register()");
     try!(self.ctl(EpollOp::EpollCtlAdd, interest, fd));
     Ok(())
   }
 
   #[inline(always)]
   pub fn unregister(&self, fd: RawFd) -> Result<()> {
-    trace!("unregister()");
     try!(self.ctl(EpollOp::EpollCtlDel, &NO_INTEREST, fd));
     Ok(())
   }

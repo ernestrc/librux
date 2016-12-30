@@ -56,11 +56,7 @@ impl ServerConfig {
 
     let cpus = ::num_cpus::get();
     let max_conn = 5000 * cpus;
-    let io_threads = if cpus > 2 {
-      cpus - 1 //1 for logging/signals
-    } else {
-      1
-    };
+    let io_threads = ::std::cmp::max(1, cpus - 1);
 
     Ok(ServerConfig {
       sockaddr: sockaddr,
@@ -150,8 +146,9 @@ impl<H> Prop for Server<H>
     eintr!(listen, "listen", self.srvfd, self.max_conn)?;
     info!("listen: fd {} with max connections: {}", self.srvfd, self.max_conn);
 
+    // TODO: check that linux >= 4.5 for EPOLLEXCLUSIVE
     let ceinfo = EpollEvent {
-      events: EPOLLIN | EPOLLET | EPOLLEXCLUSIVE | EPOLLWAKEUP,
+      events: EPOLLIN | EPOLLEXCLUSIVE,
       data: self.srvfd as u64,
     };
 
