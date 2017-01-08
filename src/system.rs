@@ -18,7 +18,7 @@ pub struct SystemBuilder<S, P> {
 }
 
 impl<S, P> SystemBuilder<S, P>
-  where for<'h> S: Handler<'h, Signal, EpollCmd>,
+  where S: Handler<Signal, EpollCmd> + 'static,
         P: Prop + Send + 'static,
 {
   pub fn with_sig_handler(self, handler: S) -> SystemBuilder<S, P> {
@@ -34,6 +34,7 @@ impl<S, P> SystemBuilder<S, P>
   }
 }
 
+// TODO Daemonize
 pub struct System<S, P> {
   sigfd: SignalFd,
   sig_h: S,
@@ -58,7 +59,7 @@ impl<P> System<DefaultSigHandler, P>
 }
 
 impl<P, S> System<S, P>
-  where for<'h> S: Handler<'h, Signal, EpollCmd>,
+  where S: Handler<Signal, EpollCmd> + 'static,
         P: Prop + Send + 'static,
 {
   pub fn start(mut prop: P, sig_h: S, mut sig_mask: SigSet) -> Result<()> {
@@ -121,8 +122,8 @@ impl<L, I> Drop for System<L, I> {
   }
 }
 
-impl<'h, S, R> Handler<'h, EpollEvent, EpollCmd> for System<S, R>
-  where for<'s> S: Handler<'s, Signal, EpollCmd>,
+impl<S, R> Handler<EpollEvent, EpollCmd> for System<S, R>
+  where S: Handler<Signal, EpollCmd>,
         R: Prop,
 {
   fn on_next(&mut self, ev: EpollEvent) -> EpollCmd {
@@ -141,6 +142,7 @@ impl<'h, S, R> Handler<'h, EpollEvent, EpollCmd> for System<S, R>
             EpollCmd::Shutdown => {
               warn!("received signal {:?}. Shutting down ..", sig.ssi_signo);
               // terminate child processes
+              // FIXME unnecessary when deamonized
               self.prop.stop();
               return EpollCmd::Shutdown;
             }

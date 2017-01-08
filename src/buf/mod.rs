@@ -3,12 +3,22 @@ use std::cmp;
 use std::io;
 use std::ptr;
 
+static DEFAULT_BUF_SIZE: &'static usize = &(1024 * 16);
+
+// TODO define trait and implement UserBuffer and KernelBuffer
+// TODO specialized `copy_from` 
 #[derive(Debug, Clone)]
 pub struct ByteBuffer {
   next_write: usize,
   next_read: usize,
   capacity: usize,
   buf: Vec<u8>,
+}
+
+impl Default for ByteBuffer {
+  fn default() -> ByteBuffer {
+    ByteBuffer::with_capacity(*DEFAULT_BUF_SIZE)
+  }
 }
 
 pub struct Mark {
@@ -174,6 +184,12 @@ impl<'a> From<&'a ByteBuffer> for &'a [u8] {
 impl<'a> From<&'a mut ByteBuffer> for &'a mut [u8] {
   fn from(b: &'a mut ByteBuffer) -> &'a mut [u8] {
     &mut b.buf[b.next_write..]
+  }
+}
+
+impl<'a> From<&'a mut ByteBuffer> for &'a [u8] {
+  fn from(b: &'a mut ByteBuffer) -> &'a [u8] {
+    &b.buf[b.next_write..]
   }
 }
 

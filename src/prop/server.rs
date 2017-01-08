@@ -1,5 +1,3 @@
-
-
 use ::RawFd;
 use error::*;
 use handler::{Handler, Reset};
@@ -17,7 +15,7 @@ use std::net::ToSocketAddrs;
 use std::thread;
 
 pub struct Server<H>
-  where H: Handler<'static, EpollEvent, EpollCmd> + Reset + Send + Clone + 'static,
+  where H: Handler<EpollEvent, EpollCmd> + Reset + Send + Clone,
 {
   srvfd: RawFd,
   epfd: EpollFd,
@@ -89,7 +87,7 @@ impl ServerConfig {
 }
 
 impl<H> Server<H>
-  where H: Handler<'static, EpollEvent, EpollCmd> + Reset + Send + Clone + 'static,
+  where H: Handler<EpollEvent, EpollCmd> + Reset + Send + Clone,
 {
   pub fn new_with<F>(config: ServerConfig, new_handler: F) -> Result<Server<H>>
     where F: FnOnce(EpollFd) -> H,
@@ -130,7 +128,7 @@ impl<H> Server<H>
 }
 
 impl<H> Prop for Server<H>
-  where H: Handler<'static, EpollEvent, EpollCmd> + Reset + Send + Clone + 'static,
+  where H: Handler<EpollEvent, EpollCmd> + Reset + Send + Clone + 'static,
 {
   type EpollHandler = H;
 
@@ -180,6 +178,7 @@ impl<H> Prop for Server<H>
         let mut cpuset = sched::CpuSet::new();
         cpuset.set(aff).unwrap();
 
+        // TODO optional
         sched::sched_setaffinity(0, &cpuset).unwrap();
 
         debug!("set thread {} affinity to cpu {}", i, aff);

@@ -43,7 +43,7 @@ pub enum EpollCmd {
 
 unsafe impl<H> Send for Epoll<H> {}
 
-impl<'h, H: Handler<'h, EpollEvent, EpollCmd> + 'h> Epoll<H> {
+impl<'h, H: Handler<EpollEvent, EpollCmd> + 'h> Epoll<H> {
   pub fn from_fd(epfd: EpollFd, handler: H, config: EpollConfig) -> Epoll<H> {
     Epoll {
       epfd: epfd,
@@ -73,10 +73,8 @@ impl<'h, H: Handler<'h, EpollEvent, EpollCmd> + 'h> Epoll<H> {
       let cnt = epoll_wait(self.epfd.fd, dst, self.loop_ms).unwrap();
       self.buf.set_len(cnt);
 
-      let handler_ptr = &mut self.handler as *mut H;
-
       for ev in self.buf.drain(..) {
-        if let EpollCmd::Shutdown = Handler::on_next(&mut *handler_ptr, ev) {
+        if let EpollCmd::Shutdown = self.handler.on_next(ev) {
           return;
         }
       }
@@ -162,8 +160,8 @@ mod tests {
     tx: Sender<EpollEvent>,
   }
 
-  impl<'h> Handler<'h, EpollEvent, EpollCmd> for ChannelHandler {
-    fn on_next(&'h mut self, events: EpollEvent) -> EpollCmd {
+  impl Handler<EpollEvent, EpollCmd> for ChannelHandler {
+    fn on_next(&mut self, events: EpollEvent) -> EpollCmd {
       if self.tx.send(events).is_ok() {
         return EpollCmd::Shutdown;
       }

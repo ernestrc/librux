@@ -1,0 +1,23 @@
+# rate-limited 1byte echo with only 1 connection and 1 thread
+#
+# use-case: profiling event delivery
+
+[general]
+threads = 1
+connections = 1
+duration = 60
+windows = 5
+protocol = "echo"
+tcp-nodelay = false
+ipv4 = true
+ipv6 = true
+
+[[workload]]
+name = "echo"
+method = "echo"
+rate = 0
+
+[[workload.parameter]]
+style = "static"
+size = 1
+seed = 0

@@ -2,4 +2,6 @@ target/
 Cargo.lock
 .gdb_history
 cachegrind.out
+perf.data
+perf.data.old
 *.bk

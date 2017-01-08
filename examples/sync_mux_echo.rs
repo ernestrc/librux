@@ -29,7 +29,7 @@ pub struct EchoHandler<'p> {
 
 /// NOTE: 'h is a late bound lifetime, required by HRTB/SyncMux
 /// check https://github.com/rust-lang/rfcs/blob/master/text/0387-higher-ranked-trait-bounds.md
-impl<'h, 'p> Handler<'h, EpollEvent, MuxCmd> for EchoHandler<'p> {
+impl<'h, 'p> Handler<EpollEvent, MuxCmd> for EchoHandler<'p> {
   fn on_next(&mut self, event: EpollEvent) -> MuxCmd {
 
     let fd = event.data as i32;
@@ -68,13 +68,18 @@ struct EchoProtocol {
   buffers: Vec<ByteBuffer>,
 }
 
-impl<'p> HandlerFactory<'p, EchoHandler<'p>, EpollEvent, MuxCmd> for EchoProtocol {
-  fn done(&mut self, handler: EchoHandler, _: usize) {
-    handler.buffer.clear();
+impl <'p> Drop for EchoHandler<'p> {
+  fn drop(&mut self) {
+    self.buffer.clear();
   }
+}
 
-  fn new(&'p mut self, _: EpollFd, index: usize, _: RawFd) -> EchoHandler<'p> {
-    EchoHandler { buffer: &mut self.buffers[index] }
+impl<'p> HandlerFactory<'p, EchoHandler<'p>, EpollEvent, MuxCmd> for EchoProtocol {
+
+  type Resource = ByteBuffer;
+
+  fn new(&mut self, _: EpollFd, _: RawFd, buffer: &'p mut ByteBuffer) -> EchoHandler<'p> {
+    EchoHandler { buffer: buffer }
   }
 }
 

@@ -6,50 +6,53 @@ use poll::*;
 use slab::Slab;
 
 #[derive(Debug)]
-pub struct SyncMux<'p, H, P: HandlerFactory<'p, H, EpollEvent, MuxCmd> + 'p>
-  where for<'h> H: Handler<'h, EpollEvent, MuxCmd>, // TODO + HandlerProp::get_interests()
+pub struct SyncMux<'mux, H, P: HandlerFactory<'mux, H, EpollEvent, MuxCmd> + 'mux>
+  where H: Handler<EpollEvent, MuxCmd>, // TODO + HandlerProp::get_interests()
 {
   epfd: EpollFd,
   handlers: Slab<H, usize>,
+  resources: Vec<P::Resource>,
   factory: P,
-  _data: ::std::marker::PhantomData<&'p bool>,
   interests: EpollEventKind,
+  _marker: ::std::marker::PhantomData<&'mux ()>,
 }
 
-impl<'p, H, P> SyncMux<'p, H, P>
-  where for<'h> H: Handler<'h, EpollEvent, MuxCmd>,
-        P: HandlerFactory<'p, H, EpollEvent, MuxCmd> + 'static,
+impl<'mux, H, P> SyncMux<'mux, H, P>
+  where H: Handler<EpollEvent, MuxCmd>,
+        P: HandlerFactory<'mux, H, EpollEvent, MuxCmd> + 'static,
 {
   pub fn new(max_handlers: usize, interests: EpollEventKind, epfd: EpollFd, factory: P)
-             -> SyncMux<'p, H, P> {
+             -> SyncMux<'mux, H, P> {
     SyncMux {
       epfd: epfd,
       handlers: Slab::with_capacity(max_handlers),
+      resources: vec!(Default::default(); max_handlers),
       factory: factory,
-      _data: ::std::marker::PhantomData {},
       interests: interests,
+      _marker: ::std::marker::PhantomData {},
     }
   }
 }
 
-impl<'p, H, P> Clone for SyncMux<'p, H, P>
-  where for<'h> H: Handler<'h, EpollEvent, MuxCmd>,
-        P: HandlerFactory<'p, H, EpollEvent, MuxCmd> + Clone + 'static,
+impl<'mux, H, P> Clone for SyncMux<'mux, H, P>
+  where H: Handler<EpollEvent, MuxCmd>,
+        P: HandlerFactory<'mux, H, EpollEvent, MuxCmd> + Clone + 'static,
 {
   fn clone(&self) -> Self {
     SyncMux {
       epfd: self.epfd,
       handlers: Slab::with_capacity(self.handlers.capacity()),
+      resources: vec!(Default::default(); self.handlers.capacity()),
       factory: self.factory.clone(),
       interests: self.interests.clone(),
-      _data: ::std::marker::PhantomData {},
+      _marker: ::std::marker::PhantomData {},
     }
   }
 }
 
-impl<'p, H, P> Reset for SyncMux<'p, H, P>
-  where for<'h> H: Handler<'h, EpollEvent, MuxCmd>,
-        P: HandlerFactory<'p, H, EpollEvent, MuxCmd> + 'static,
+impl<'mux, H, P> Reset for SyncMux<'mux, H, P>
+  where H: Handler<EpollEvent, MuxCmd>,
+        P: HandlerFactory<'mux, H, EpollEvent, MuxCmd> + 'static,
 {
   fn reset(&mut self, epfd: EpollFd) {
     self.epfd = epfd;
@@ -116,11 +119,11 @@ macro_rules! some_or_close {
   }}
 }
 
-impl<'p, H, P> Handler<'p, EpollEvent, EpollCmd> for SyncMux<'p, H, P>
-  where for<'h> H: Handler<'h, EpollEvent, MuxCmd>,
-        P: HandlerFactory<'p, H, EpollEvent, MuxCmd> + 'static,
+impl<'mux, H, P> Handler<EpollEvent, EpollCmd> for SyncMux<'mux, H, P>
+  where H: Handler<EpollEvent, MuxCmd>,
+        P: HandlerFactory<'mux, H, EpollEvent, MuxCmd> + 'static,
 {
-  fn on_next(&'p mut self, mut event: EpollEvent) -> EpollCmd {
+  fn on_next(&mut self, mut event: EpollEvent) -> EpollCmd {
 
     match Action::decode(event.data) {
 
@@ -130,7 +133,8 @@ impl<'p, H, P> Handler<'p, EpollEvent, EpollCmd> for SyncMux<'p, H, P>
         event.data = clifd as u64;
 
         keep_or!(entry.get_mut().on_next(event), {
-          self.factory.done(entry.remove(), i);
+          // self.factory.release(entry.remove(), i);
+          entry.remove();
           close!(clifd);
         });
       }
@@ -140,16 +144,20 @@ impl<'p, H, P> Handler<'p, EpollEvent, EpollCmd> for SyncMux<'p, H, P>
         match eintr!(accept, "accept", srvfd) {
           Ok(Some(clifd)) => {
             debug!("accept: accepted new tcp client {}", &clifd);
-            // TODO grow slab
+            // TODO grow slab, deprecate max_conn in favour of reserve slots
+            // or Mux::reserve to pre-allocate and then grow as it needs more
             let entry = some_or_close!(self.handlers.vacant_entry(), clifd);
             let i = entry.index();
 
-            let mut h = self.factory.new(self.epfd, i, clifd);
+            let mut h = unsafe {
+              self.factory.new(self.epfd, clifd, &mut *(&mut self.resources[i] as *mut P::Resource))
+            };
 
             let mut event = EpollEvent {
               events: self.interests,
               data: clifd as u64,
             };
+
             keep_or_close!(h.on_next(event), clifd);
 
             event.data = Action::encode(Action::Notify(i, clifd));
