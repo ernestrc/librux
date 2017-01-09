@@ -1,3 +1,4 @@
+use Reset;
 use error::{Result, ErrorKind};
 use std::cmp;
 use std::io;
@@ -6,7 +7,7 @@ use std::ptr;
 static DEFAULT_BUF_SIZE: &'static usize = &(1024 * 16);
 
 // TODO define trait and implement UserBuffer and KernelBuffer
-// TODO specialized `copy_from` 
+// TODO specialized `copy_from`
 #[derive(Debug, Clone)]
 pub struct ByteBuffer {
   next_write: usize,
@@ -143,12 +144,14 @@ impl ByteBuffer {
   pub fn consume(&mut self, cnt: usize) {
     self.next_read += cnt;
     if self.next_read == self.next_write {
-      self.clear();
+      Reset::reset(self);
     }
   }
+}
 
+impl Reset for ByteBuffer {
   #[inline]
-  pub fn clear(&mut self) {
+  fn reset(&mut self) {
     self.next_read = 0;
     self.next_write = 0;
   }

@@ -1,6 +1,6 @@
-use ::RawFd;
+use ::{RawFd, Reset};
 use error::*;
-use handler::{Handler, Reset};
+use handler::Handler;
 use nix::sched;
 use nix::sys::signal;
 use nix::sys::signal::Signal;
@@ -14,9 +14,7 @@ use std::net;
 use std::net::ToSocketAddrs;
 use std::thread;
 
-pub struct Server<H>
-  where H: Handler<EpollEvent, EpollCmd> + Reset + Send + Clone,
-{
+pub struct Server<H> {
   srvfd: RawFd,
   epfd: EpollFd,
   sockaddr: SockAddr,
@@ -86,9 +84,7 @@ impl ServerConfig {
   }
 }
 
-impl<H> Server<H>
-  where H: Handler<EpollEvent, EpollCmd> + Reset + Send + Clone,
-{
+impl<H> Server<H> {
   pub fn new_with<F>(config: ServerConfig, new_handler: F) -> Result<Server<H>>
     where F: FnOnce(EpollFd) -> H,
   {
@@ -128,7 +124,7 @@ impl<H> Server<H>
 }
 
 impl<H> Prop for Server<H>
-  where H: Handler<EpollEvent, EpollCmd> + Reset + Send + Clone + 'static,
+  where H: Handler<EpollEvent, EpollCmd> + EpollHandler + Reset + Send + Clone + 'static,
 {
   type EpollHandler = H;
 
@@ -144,9 +140,8 @@ impl<H> Prop for Server<H>
     eintr!(listen, "listen", self.srvfd, self.max_conn)?;
     info!("listen: fd {} with max connections: {}", self.srvfd, self.max_conn);
 
-    // TODO: check that linux >= 4.5 for EPOLLEXCLUSIVE
     let ceinfo = EpollEvent {
-      events: EPOLLIN | EPOLLEXCLUSIVE,
+      events: H::interests(),
       data: self.srvfd as u64,
     };
 
@@ -166,7 +161,7 @@ impl<H> Prop for Server<H>
 
       let mut handler = self.template.clone();
 
-      handler.reset(epfd);
+      handler.with_epfd(epfd);
 
       thread::spawn(move || {
         // add the set of signals to the signal mask for all threads

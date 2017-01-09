@@ -28,6 +28,10 @@ pub use nix::unistd;
 pub use nix::unistd::close;
 pub use std::os::unix::io::RawFd;
 
+pub trait Reset {
+  fn reset(&mut self);
+}
+
 #[inline]
 pub fn write(fd: RawFd, buf: &[u8]) -> Result<Option<usize>> {
   let b = eintr!(unistd::write, "unistd::write", fd, buf)?;

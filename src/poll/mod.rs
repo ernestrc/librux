@@ -41,6 +41,13 @@ pub enum EpollCmd {
   Poll,
 }
 
+pub trait EpollHandler {
+  #[inline(always)]
+  fn interests() -> EpollEventKind;
+
+  fn with_epfd(&mut self, epfd: EpollFd);
+}
+
 unsafe impl<H> Send for Epoll<H> {}
 
 impl<'h, H: Handler<EpollEvent, EpollCmd> + 'h> Epoll<H> {

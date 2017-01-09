@@ -6,7 +6,7 @@ extern crate num_cpus;
 extern crate env_logger;
 
 use rux::{send as rsend, recv as rrecv};
-use rux::RawFd;
+use rux::{RawFd, Reset};
 use rux::buf::ByteBuffer;
 use rux::handler::*;
 use rux::mux::*;
@@ -23,17 +23,14 @@ const MAX_CONN: usize = 2048;
 /// Handler that echoes incoming bytes
 ///
 /// For benchmarking I/O throuput and latency
-pub struct EchoHandler<'p> {
-  buffer: &'p mut ByteBuffer,
-}
+pub struct EchoHandler;
 
-/// NOTE: 'h is a late bound lifetime, required by HRTB/SyncMux
-/// check https://github.com/rust-lang/rfcs/blob/master/text/0387-higher-ranked-trait-bounds.md
-impl<'h, 'p> Handler<EpollEvent, MuxCmd> for EchoHandler<'p> {
-  fn on_next(&mut self, event: EpollEvent) -> MuxCmd {
+impl<'a> Handler<MuxEvent<'a, ByteBuffer>, MuxCmd> for EchoHandler {
+  fn on_next(&mut self, event: MuxEvent<'a, ByteBuffer>) -> MuxCmd {
 
-    let fd = event.data as i32;
-    let kind = event.events;
+    let fd = event.fd;
+    let kind = event.kind;
+    let buffer = event.resource;
 
     if kind.contains(EPOLLHUP) {
       trace!("socket's fd {}: EPOLLHUP", fd);
@@ -46,15 +43,15 @@ impl<'h, 'p> Handler<EpollEvent, MuxCmd> for EchoHandler<'p> {
     }
 
     if kind.contains(EPOLLIN) {
-      if let Some(n) = rrecv(fd, From::from(&mut *self.buffer), MSG_DONTWAIT).unwrap() {
-        self.buffer.extend(n);
+      if let Some(n) = rrecv(fd, From::from(&mut *buffer), MSG_DONTWAIT).unwrap() {
+        buffer.extend(n);
       }
     }
 
     if kind.contains(EPOLLOUT) {
-      if self.buffer.is_readable() {
-        if let Some(cnt) = rsend(fd, From::from(&*self.buffer), MSG_DONTWAIT).unwrap() {
-          self.buffer.consume(cnt);
+      if buffer.is_readable() {
+        if let Some(cnt) = rsend(fd, From::from(&*buffer), MSG_DONTWAIT).unwrap() {
+          buffer.consume(cnt);
         }
       }
     }
@@ -63,23 +60,31 @@ impl<'h, 'p> Handler<EpollEvent, MuxCmd> for EchoHandler<'p> {
   }
 }
 
-#[derive(Clone, Debug)]
-struct EchoProtocol {
-  buffers: Vec<ByteBuffer>,
-}
+impl EpollHandler for EchoHandler {
+  fn interests() -> EpollEventKind {
+    EPOLLIN | EPOLLOUT | EPOLLET
+  }
 
-impl <'p> Drop for EchoHandler<'p> {
-  fn drop(&mut self) {
-    self.buffer.clear();
+  fn with_epfd(&mut self, _: EpollFd) {
+
   }
 }
 
-impl<'p> HandlerFactory<'p, EchoHandler<'p>, EpollEvent, MuxCmd> for EchoProtocol {
+impl Reset for EchoHandler {
+  fn reset(&mut self) {}
+}
 
-  type Resource = ByteBuffer;
+#[derive(Clone, Debug)]
+struct EchoFactory;
 
-  fn new(&mut self, _: EpollFd, _: RawFd, buffer: &'p mut ByteBuffer) -> EchoHandler<'p> {
-    EchoHandler { buffer: buffer }
+impl<'a> HandlerFactory<'a, EchoHandler, ByteBuffer> for EchoFactory {
+
+  fn new_resource(&self) -> ByteBuffer {
+    ByteBuffer::with_capacity(BUF_SIZE)
+  }
+
+  fn new_handler(&mut self, _: EpollFd, _: RawFd) -> EchoHandler {
+    EchoHandler
   }
 }
 
@@ -96,17 +101,15 @@ fn main() {
   let config = ServerConfig::tcp(("127.0.0.1", 9999))
     .unwrap()
     .max_conn(MAX_CONN)
-    //.io_threads(::std::cmp::max(1, ::num_cpus::get() / 2))
-    .io_threads(1)
+    .io_threads(::std::cmp::max(1, ::num_cpus::get() / 2))
+    // .io_threads(1)
     .epoll_config(EpollConfig {
       loop_ms: EPOLL_LOOP_MS,
       buffer_capacity: EPOLL_BUF_CAP,
     });
 
-  let protocol = EchoProtocol { buffers: vec!(ByteBuffer::with_capacity(BUF_SIZE); MAX_CONN) };
-
   let server = Server::new_with(config, |epfd| {
-      SyncMux::new(MAX_CONN, EPOLLIN | EPOLLOUT | EPOLLET, epfd, protocol)
+      SyncMux::new(MAX_CONN, epfd, EchoFactory)
     })
     .unwrap();
 
