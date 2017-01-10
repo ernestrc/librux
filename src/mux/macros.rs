@@ -11,6 +11,6 @@ macro_rules! keep_or {
 #[macro_export]
 macro_rules! keep {
   ($cmd:expr) => {{
-    keep_or_return!($cmd, MuxCmd::Close)
+    keep_or!($cmd, { return MuxCmd::Close; });
   }}
 }

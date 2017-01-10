@@ -2,7 +2,7 @@ use Reset;
 use error::*;
 use handler::*;
 use nix::sys::socket::*;
-use poll::*;
+use epoll::*;
 use slab::Slab;
 
 use super::*;
@@ -37,7 +37,9 @@ impl<'m, H, P, R> SyncMux<'m, H, P, R>
 
 macro_rules! close {
   ($clifd: expr) => {{
-    perror!("unistd::close", ::close($clifd));
+    if let Err(e) = eintr!(::unistd::close($clifd)) {
+      report_err!(e.into());
+    }
     return EpollCmd::Poll;
   }}
 }
@@ -80,7 +82,7 @@ impl<'m, H, P, R> Handler<EpollEvent, EpollCmd> for SyncMux<'m, H, P, R>
 
       Action::New(data) => {
         let srvfd = data as i32;
-        match eintr!(accept, "accept", srvfd) {
+        match eintr!(accept(srvfd)) {
           Ok(Some(clifd)) => {
             debug!("accept: accepted new tcp client {}", &clifd);
             // TODO grow slab, deprecate max_conn in favour of reserve slots
@@ -100,7 +102,7 @@ impl<'m, H, P, R> Handler<EpollEvent, EpollCmd> for SyncMux<'m, H, P, R>
             entry.insert(h);
           }
           Ok(None) => debug!("accept4: socket not ready"),
-          Err(e) => report_err!("accept4: {}", e.into()),
+          Err(e) => report_err!(e.into()),
         }
       }
     };
@@ -118,11 +120,6 @@ impl<'m, H, P, R> EpollHandler for SyncMux<'m, H, P, R> {
   fn with_epfd(&mut self, epfd: EpollFd) {
     self.epfd = epfd;
   }
-}
-
-impl<'m, H, P, R> Reset for SyncMux<'m, H, P, R> {
-  // TODO
-  fn reset(&mut self) {}
 }
 
 impl<'m, H, P, R> Clone for SyncMux<'m, H, P, R>

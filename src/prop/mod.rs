@@ -1,6 +1,6 @@
 use error::Result;
 use handler::Handler;
-use poll::{EpollEvent, EpollCmd, Epoll, EpollConfig};
+use epoll::{EpollEvent, EpollCmd, Epoll, EpollConfig};
 
 pub mod server;
 pub mod signals;

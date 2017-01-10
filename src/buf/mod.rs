@@ -45,7 +45,7 @@ impl ByteBuffer {
     }
   }
   #[inline]
-  pub fn reset(&mut self, mark: Mark) {
+  pub fn reset_from(&mut self, mark: Mark) {
     self.next_write = mark.next_write;
     self.next_read = mark.next_read;
   }
@@ -144,7 +144,7 @@ impl ByteBuffer {
   pub fn consume(&mut self, cnt: usize) {
     self.next_read += cnt;
     if self.next_read == self.next_write {
-      Reset::reset(self);
+      self.reset();
     }
   }
 }
@@ -201,6 +201,7 @@ mod tests {
   use error::ErrorKind;
   use std::io::{Read, Cursor};
   use super::*;
+  use Reset;
 
   #[test]
   fn does_buffer() {
@@ -305,7 +306,7 @@ mod tests {
 
     assert!(buffer.write(&[1; 1]).is_err());
 
-    buffer.clear();
+    buffer.reset();
     assert_eq!(buffer.readable(), 0);
     assert_eq!(buffer.writable(), SIZE);
 

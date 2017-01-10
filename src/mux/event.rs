@@ -1,5 +1,5 @@
 use RawFd;
-use poll::EpollEventKind;
+use epoll::EpollEventKind;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MuxCmd {

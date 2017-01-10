@@ -1,4 +1,4 @@
-use ::{RawFd, Reset};
+use ::RawFd;
 use error::*;
 use handler::Handler;
 use nix::sched;
@@ -8,7 +8,7 @@ use nix::sys::signalfd::SigSet;
 
 use nix::sys::socket::*;
 use nix::unistd;
-use poll::*;
+use epoll::*;
 use prop::Prop;
 use std::net;
 use std::net::ToSocketAddrs;
@@ -124,7 +124,7 @@ impl<H> Server<H> {
 }
 
 impl<H> Prop for Server<H>
-  where H: Handler<EpollEvent, EpollCmd> + EpollHandler + Reset + Send + Clone + 'static,
+  where H: Handler<EpollEvent, EpollCmd> + EpollHandler + Send + Clone + 'static,
 {
   type EpollHandler = H;
 
@@ -134,10 +134,10 @@ impl<H> Prop for Server<H>
 
   fn setup(&mut self, mask: SigSet) -> Result<Epoll<Self::EpollHandler>> {
 
-    eintr!(bind, "bind", self.srvfd, &self.sockaddr)?;
+    eintr!(bind(self.srvfd, &self.sockaddr))?;
     info!("bind: fd {} to {}", self.srvfd, self.sockaddr);
 
-    eintr!(listen, "listen", self.srvfd, self.max_conn)?;
+    eintr!(listen(self.srvfd, self.max_conn))?;
     info!("listen: fd {} with max connections: {}", self.srvfd, self.max_conn);
 
     let ceinfo = EpollEvent {

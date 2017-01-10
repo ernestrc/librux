@@ -5,14 +5,13 @@ extern crate rux;
 extern crate num_cpus;
 extern crate env_logger;
 
-use rux::{send as rsend, recv as rrecv};
 use rux::{RawFd, Reset};
 use rux::buf::ByteBuffer;
 use rux::handler::*;
 use rux::mux::*;
 use rux::poll::*;
-use rux::prop::server::*;
 use rux::sys::socket::*;
+use rux::prop::server::*;
 use rux::system::System;
 
 const BUF_SIZE: usize = 2048;
@@ -43,14 +42,14 @@ impl<'a> Handler<MuxEvent<'a, ByteBuffer>, MuxCmd> for EchoHandler {
     }
 
     if kind.contains(EPOLLIN) {
-      if let Some(n) = rrecv(fd, From::from(&mut *buffer), MSG_DONTWAIT).unwrap() {
+      if let Some(n) = eintr!(recv(fd, From::from(&mut *buffer), MSG_DONTWAIT)).unwrap() {
         buffer.extend(n);
       }
     }
 
     if kind.contains(EPOLLOUT) {
       if buffer.is_readable() {
-        if let Some(cnt) = rsend(fd, From::from(&*buffer), MSG_DONTWAIT).unwrap() {
+        if let Some(cnt) = eintr!(send(fd, From::from(&*buffer), MSG_DONTWAIT)).unwrap() {
           buffer.consume(cnt);
         }
       }
