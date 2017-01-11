@@ -44,11 +44,13 @@ impl ByteBuffer {
       next_read: self.next_read,
     }
   }
+
   #[inline]
   pub fn reset_from(&mut self, mark: Mark) {
     self.next_write = mark.next_write;
     self.next_read = mark.next_read;
   }
+
   #[inline]
   pub fn reserve(&mut self, additional: usize) {
     self.buf.append(&mut vec!(0_u8; additional));
@@ -80,13 +82,28 @@ impl ByteBuffer {
     self.capacity
   }
 
+  pub fn compact(&mut self) -> bool {
+    self.next_read > 0 && {
+      let len = self.next_write - self.next_read;
+      unsafe {
+        let p = self.buf.as_mut_ptr();
+        ptr::copy(p.offset(self.next_read as isize), p, len);
+      }
+      self.next_write = len;
+      self.next_read = 0;
+      true
+    }
+  }
+
   #[inline]
   pub fn write(&mut self, b: &[u8]) -> Result<usize> {
     let len = b.len();
     let wlen = self.next_write + len;
     if wlen > self.capacity {
-      // TODO shrink left
-      bail!(ErrorKind::BufferOverflowError(self.capacity))
+      if !self.compact() {
+        bail!(ErrorKind::OutOfCapacity(self.capacity))
+      }
+      self.write(b)
     } else {
       self.buf[self.next_write..wlen].copy_from_slice(b);
       self.extend(len);
@@ -94,14 +111,17 @@ impl ByteBuffer {
     }
   }
 
+  #[inline]
   pub fn write_at(&mut self, index: usize, b: &[u8]) -> Result<usize> {
     assert!(index >= self.next_read && index < self.next_write);
 
     let len = b.len();
     let wlen = self.next_write + len;
     if wlen > self.capacity {
-      // TODO shrink left
-      bail!(ErrorKind::BufferOverflowError(self.capacity))
+      if !self.compact() {
+        bail!(ErrorKind::OutOfCapacity(self.capacity))
+      }
+      self.write_at(index, b)
     } else {
       unsafe {
         {
@@ -198,10 +218,10 @@ impl<'a> From<&'a mut ByteBuffer> for &'a [u8] {
 
 #[cfg(test)]
 mod tests {
+  use Reset;
   use error::ErrorKind;
   use std::io::{Read, Cursor};
   use super::*;
-  use Reset;
 
   #[test]
   fn does_buffer() {
@@ -346,7 +366,7 @@ mod tests {
 
     b.extend_from_slice(From::from(&buffer));
 
-    assert_eq!(b, vec![1, 1, 1, 4, 5, 6]);
+    assert_eq!(b, [1, 1, 1, 4, 5, 6]);
   }
 
   #[test]
@@ -384,7 +404,7 @@ mod tests {
 
     assert!(res.is_err());
     match res.err().unwrap().kind() {
-      &ErrorKind::BufferOverflowError(max) => assert_eq!(max, 5),
+      &ErrorKind::OutOfCapacity(max) => assert_eq!(max, 5),
       e => panic!("different error: {:?}", e),
     }
 
@@ -404,37 +424,45 @@ mod tests {
   }
 
   #[test]
-  fn overflow_error() {
-    {
-      let mut buffer = ByteBuffer {
-        next_read: 0,
-        capacity: 5,
-        next_write: 0,
-        buf: Vec::with_capacity(5),
-      };
+  fn returns_out_of_capacity_error() {
+    let mut buffer = ByteBuffer::with_capacity(5);
 
-      let a = [1, 2, 3, 4, 5, 6];
-      let res = buffer.write(&a);
+    let a = [1, 2, 3, 4, 5];
+    buffer.write(&a).unwrap();
+    let res = buffer.write(&[1]);
 
-      assert!(res.is_err());
-      match res.err().unwrap().kind() {
-        &ErrorKind::BufferOverflowError(max) => assert_eq!(max, 5),
-        e => panic!("different error: {:?}", e),
-      }
+    assert!(res.is_err());
+    match res.err().unwrap().kind() {
+      &ErrorKind::OutOfCapacity(max) => assert_eq!(max, 5),
+      e => panic!("different error: {:?}", e),
     }
+  }
 
-    {
-      let mut buffer = ByteBuffer::with_capacity(5);
+  #[test]
+  fn compacts_buffer_when_out_of_capacity() {
+    let mut buffer = ByteBuffer::with_capacity(5);
 
-      let a = [1, 2, 3, 4, 5];
-      buffer.write(&a).unwrap();
-      let res = buffer.write(&[1]);
+    let a = [1, 2, 3, 4, 5];
+    buffer.write(&a).unwrap();
 
-      assert!(res.is_err());
-      match res.err().unwrap().kind() {
-        &ErrorKind::BufferOverflowError(max) => assert_eq!(max, 5),
-        e => panic!("different error: {:?}", e),
-      }
+    let mut aa = [0; 2];
+    assert_eq!(buffer.read(&mut aa).unwrap(), 2);
+    assert!(aa == [1, 2]);
+
+    buffer.consume(2);
+
+    let mut res = buffer.write(&[1, 2]);
+    assert!(res.is_ok());
+
+    let mut bb = [0; 5];
+    assert_eq!(buffer.read(&mut bb).unwrap(), 5);
+    assert!(bb == [3, 4, 5, 1, 2]);
+
+    res = buffer.write(&[1, 2]);
+
+    match res.err().unwrap().kind() {
+      &ErrorKind::OutOfCapacity(max) => assert_eq!(max, 5),
+      e => panic!("different error: {:?}", e),
     }
   }
 }
