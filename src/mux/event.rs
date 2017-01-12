@@ -15,6 +15,6 @@ impl Default for MuxCmd {
 
 pub struct MuxEvent<'r, R: 'r> {
   pub resource: &'r mut R,
-  pub kind: EpollEventKind,
+  pub events: EpollEventKind,
   pub fd: RawFd,
 }

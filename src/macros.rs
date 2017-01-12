@@ -11,7 +11,7 @@ macro_rules! report_err {
 }
 
 #[macro_export]
-macro_rules! eintr {
+macro_rules! syscall {
   ($syscall:expr) => {{
     let res;
     loop {

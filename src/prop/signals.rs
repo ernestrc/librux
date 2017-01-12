@@ -1,7 +1,8 @@
-use handler::Handler;
-pub use nix::sys::signal::{Signal, SigSet};
+
 
 use epoll::EpollCmd;
+use handler::Handler;
+pub use nix::sys::signal::{Signal, SigSet};
 
 pub struct DefaultSigHandler;
 

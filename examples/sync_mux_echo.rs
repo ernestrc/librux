@@ -29,28 +29,28 @@ impl<'a> Handler<MuxEvent<'a, ByteBuffer>, MuxCmd> for EchoHandler {
   fn on_next(&mut self, event: MuxEvent<'a, ByteBuffer>) -> MuxCmd {
 
     let fd = event.fd;
-    let kind = event.kind;
+    let events = event.events;
     let buffer = event.resource;
 
-    if kind.contains(EPOLLHUP) {
+    if events.contains(EPOLLHUP) {
       trace!("socket's fd {}: EPOLLHUP", fd);
       return MuxCmd::Close;
     }
 
-    if kind.contains(EPOLLERR) {
+    if events.contains(EPOLLERR) {
       error!("socket's fd {}: EPOLERR", fd);
       return MuxCmd::Close;
     }
 
-    if kind.contains(EPOLLIN) {
-      if let Some(n) = eintr!(recv(fd, From::from(&mut *buffer), MSG_DONTWAIT)).unwrap() {
+    if events.contains(EPOLLIN) {
+      if let Some(n) = syscall!(recv(fd, From::from(&mut *buffer), MSG_DONTWAIT)).unwrap() {
         buffer.extend(n);
       }
     }
 
-    if kind.contains(EPOLLOUT) {
+    if events.contains(EPOLLOUT) {
       if buffer.is_readable() {
-        if let Some(cnt) = eintr!(send(fd, From::from(&*buffer), MSG_DONTWAIT)).unwrap() {
+        if let Some(cnt) = syscall!(send(fd, From::from(&*buffer), MSG_DONTWAIT)).unwrap() {
           buffer.consume(cnt);
         }
       }

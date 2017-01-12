@@ -1,8 +1,8 @@
 use Reset;
+use epoll::*;
 use error::*;
 use handler::*;
 use nix::sys::socket::*;
-use epoll::*;
 use slab::Slab;
 
 use super::*;
@@ -37,7 +37,7 @@ impl<'m, H, P, R> SyncMux<'m, H, P, R>
 
 macro_rules! close {
   ($clifd: expr) => {{
-    if let Err(e) = eintr!(::unistd::close($clifd)) {
+    if let Err(e) = syscall!(::unistd::close($clifd)) {
       report_err!(e.into());
     }
     return EpollCmd::Poll;
@@ -70,7 +70,7 @@ impl<'m, H, P, R> Handler<EpollEvent, EpollCmd> for SyncMux<'m, H, P, R>
 
         let mux_event = MuxEvent {
           resource: resource,
-          kind: event.events,
+          events: event.events,
           fd: clifd,
         };
 
@@ -82,7 +82,7 @@ impl<'m, H, P, R> Handler<EpollEvent, EpollCmd> for SyncMux<'m, H, P, R>
 
       Action::New(data) => {
         let srvfd = data as i32;
-        match eintr!(accept(srvfd)) {
+        match syscall!(accept(srvfd)) {
           Ok(Some(clifd)) => {
             debug!("accept: accepted new tcp client {}", &clifd);
             // TODO grow slab, deprecate max_conn in favour of reserve slots

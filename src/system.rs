@@ -1,3 +1,5 @@
+
+use epoll::*;
 use error::Result;
 use handler::*;
 
@@ -5,7 +7,6 @@ pub use nix::sys::signal::{Signal, SigSet};
 
 use nix::sys::signalfd::{SignalFd, SFD_NONBLOCK};
 use nix::unistd;
-use epoll::*;
 use prop::Prop;
 use prop::signals::DefaultSigHandler;
 use std::os::unix::io::AsRawFd;
