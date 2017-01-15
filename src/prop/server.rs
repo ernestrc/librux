@@ -3,12 +3,9 @@ use epoll::*;
 use error::*;
 use handler::Handler;
 use nix::sched;
-use nix::sys::signal;
-use nix::sys::signal::Signal;
 use nix::sys::signalfd::SigSet;
 
 use nix::sys::socket::*;
-use nix::unistd;
 use prop::Prop;
 use std::net;
 use std::net::ToSocketAddrs;
@@ -35,6 +32,10 @@ pub struct ServerConfig {
   epoll_config: EpollConfig,
 }
 
+// TODO: provide optional socket based activation
+// http://man7.org/linux/man-pages/man7/daemon.7.html
+// http://man7.org/linux/man-pages/man3/sd_listen_fds.3.html
+// http://man7.org/linux/man-pages/man5/systemd.socket.5.html
 impl ServerConfig {
   pub fn tcp<A: ToSocketAddrs>(addr: A) -> Result<ServerConfig> {
     let (sockaddr, family) = inet(addr)?;
@@ -116,11 +117,6 @@ impl<H> Server<H> {
       epoll_config: epoll_config,
     })
   }
-
-  fn shutdown(&self) {
-    unistd::close(self.srvfd).unwrap();
-    signal::kill(unistd::getpid(), Signal::SIGKILL).unwrap();
-  }
 }
 
 impl<H> Prop for Server<H>
@@ -128,9 +124,8 @@ impl<H> Prop for Server<H>
 {
   type EpollHandler = H;
 
-  fn get_epoll_config(&self) -> EpollConfig {
-    self.epoll_config
-  }
+  // TODO reload configuration
+  fn reload(&mut self) {}
 
   fn setup(&mut self, mask: SigSet) -> Result<Epoll<Self::EpollHandler>> {
 
@@ -198,10 +193,6 @@ impl<H> Prop for Server<H>
     debug!("set thread 0 affinity to cpu {}", aff);
 
     Ok(epoll)
-  }
-
-  fn stop(&self) {
-    self.shutdown();
   }
 }
 

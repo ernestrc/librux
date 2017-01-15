@@ -74,7 +74,7 @@ impl<'h, H: Handler<EpollEvent, EpollCmd> + 'h> Epoll<H> {
   }
 
   #[inline(always)]
-  pub fn run_once(&mut self) {
+  pub fn run_once(&mut self) -> EpollCmd {
     unsafe {
       let dst = ::std::slice::from_raw_parts_mut(self.buf.as_mut_ptr(), self.buf.capacity());
       let cnt = epoll_wait(self.epfd.fd, dst, self.loop_ms).unwrap();
@@ -82,15 +82,19 @@ impl<'h, H: Handler<EpollEvent, EpollCmd> + 'h> Epoll<H> {
 
       for ev in self.buf.drain(..) {
         if let EpollCmd::Shutdown = self.handler.on_next(ev) {
-          return;
+          return EpollCmd::Shutdown;
         }
       }
+
+      EpollCmd::Poll
     }
   }
 
   pub fn run(&mut self) {
     loop {
-      self.run_once();
+      if let EpollCmd::Shutdown = self.run_once() {
+        return;
+      }
     }
   }
 }

@@ -18,7 +18,7 @@ pub mod mux;
 pub mod epoll;
 pub mod buf;
 pub mod prop;
-pub mod system;
+pub mod daemon;
 
 pub use nix::*;
 pub use std::os::unix::io::RawFd;
