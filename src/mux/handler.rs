@@ -4,7 +4,6 @@ use error::*;
 use handler::*;
 use nix::sys::socket::*;
 use slab::Slab;
-
 use super::*;
 use super::action::*;
 

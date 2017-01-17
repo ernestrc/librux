@@ -13,25 +13,24 @@ macro_rules! report_err {
 #[macro_export]
 macro_rules! syscall {
   ($syscall:expr) => {{
-    let res;
+    let res: Result<_>;
     loop {
       match $syscall {
         Ok(m) => {
           res = Ok(Some(m));
           break;
         },
-        Err(SysError(EAGAIN)) => {
+        Err(NixError::Sys(errno::EAGAIN)) => {
           trace!("EAGAIN: not ready");
           res = Ok(None);
           break;
         },
-        Err(SysError(EINTR)) => {
+        Err(NixError::Sys(errno::EINTR)) => {
           debug!("EINTR: re-submitting syscall");
           continue;
         },
         Err(err) => {
-          report_err!(err.into());
-          res = Err(err);
+          res = Err(err.into());
           break;
         }
       }

@@ -1,7 +1,10 @@
-pub use nix::Error::Sys as SysError;
-pub use nix::errno::*;
+pub use nix::Error as NixError;
+pub use nix::errno;
 
 error_chain! {
+    types {
+        Error, ErrorKind, ResultExt, Result;
+    }
 
     links { }
 
@@ -9,7 +12,7 @@ error_chain! {
         IoError(::std::io::Error);
         ParseAddr(::std::net::AddrParseError);
         Utf8Error(::std::string::FromUtf8Error);
-        NixError(::nix::Error);
+        NixError(NixError);
     }
 
     errors {
