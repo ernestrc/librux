@@ -108,10 +108,7 @@ fn main() {
       buffer_capacity: EPOLL_BUF_CAP,
     });
 
-  let server = Server::new_with(config, |epfd| {
-      
-    })
-    .unwrap();
+  let server = Server::new(config, EchoFactory).unwrap();
 
   Daemon::build(server).run().unwrap();
 }
