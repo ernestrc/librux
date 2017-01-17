@@ -109,7 +109,7 @@ fn main() {
     });
 
   let server = Server::new_with(config, |epfd| {
-      SyncMux::new(MAX_CONN, epfd, EchoFactory)
+      
     })
     .unwrap();
 

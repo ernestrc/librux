@@ -2,9 +2,9 @@ use ::RawFd;
 use epoll::*;
 use error::*;
 use handler::Handler;
+use mux::*;
 use nix::sched;
 use nix::sys::signalfd::SigSet;
-
 use nix::sys::socket::*;
 use prop::Prop;
 use std::net;
@@ -16,7 +16,7 @@ pub struct Server<H> {
   epfd: EpollFd,
   sockaddr: SockAddr,
   max_conn: usize,
-  template: H,
+  handler: H,
   io_threads: usize,
   epoll_config: EpollConfig,
 }
@@ -37,13 +37,14 @@ pub struct ServerConfig {
 // http://man7.org/linux/man-pages/man3/sd_listen_fds.3.html
 // http://man7.org/linux/man-pages/man5/systemd.socket.5.html
 impl ServerConfig {
+
   pub fn tcp<A: ToSocketAddrs>(addr: A) -> Result<ServerConfig> {
-    let (sockaddr, family) = inet(addr)?;
+    let (sockaddr, family) = Self::inet(addr)?;
     ServerConfig::new(sockaddr, SockType::Stream, family, SOCK_NONBLOCK, 6)
   }
 
   pub fn udp<A: ToSocketAddrs>(addr: A) -> Result<ServerConfig> {
-    let (sockaddr, family) = inet(addr)?;
+    let (sockaddr, family) = Self::inet(addr)?;
     ServerConfig::new(sockaddr, SockType::Datagram, family, SOCK_NONBLOCK, 17)
   }
 
@@ -83,6 +84,22 @@ impl ServerConfig {
   pub fn epoll_config(self, epoll_config: EpollConfig) -> ServerConfig {
     ServerConfig { epoll_config: epoll_config, ..self }
   }
+
+  fn inet<A: ToSocketAddrs>(addr: A) -> Result<(SockAddr, AddressFamily)> {
+    let inet_addr_std = addr.to_socket_addrs()
+      .unwrap()
+      .next()
+      .ok_or("could not parse sockaddr")?;
+    let inet_addr = InetAddr::from_std(&inet_addr_std);
+    let sockaddr = SockAddr::Inet(inet_addr);
+
+    let family = match inet_addr_std {
+      net::SocketAddr::V4(_) => AddressFamily::Inet,
+      net::SocketAddr::V6(_) => AddressFamily::Inet6,
+    };
+
+    Ok((sockaddr, family))
+  }
 }
 
 impl<H> Server<H> {
@@ -111,11 +128,27 @@ impl<H> Server<H> {
       sockaddr: sockaddr,
       epfd: epfd,
       srvfd: srvfd,
-      template: new_handler(epfd),
+      handler: new_handler(epfd),
       max_conn: max_conn,
       io_threads: io_threads,
       epoll_config: epoll_config,
     })
+  }
+}
+
+impl<'m, H, F, R> Server<SyncMux<'m, H, F, R>>
+  where H: Handler<MuxEvent<'m, R>, MuxCmd> + EpollHandler,
+        F: HandlerFactory<'m, H, R> + 'm,
+        R: Clone + 'm,
+{
+  pub fn new(config: ServerConfig, factory: F) -> Result<Server<SyncMux<'m, H, F, R>>> {
+
+    let max_conn = config.max_conn;
+    let server = Server::new_with(config, |epfd| {
+      SyncMux::new(max_conn, epfd, factory)
+    })?;
+
+    Ok(server)
   }
 }
 
@@ -154,7 +187,7 @@ impl<H> Prop for Server<H>
       epfd.register(srvfd, &ceinfo)?;
       debug!("registered thread {} interest on {}", i, srvfd);
 
-      let mut handler = self.template.clone();
+      let mut handler = self.handler.clone();
 
       handler.with_epfd(epfd);
 
@@ -179,7 +212,7 @@ impl<H> Prop for Server<H>
       });
     }
 
-    let epoll = Epoll::from_fd(self.epfd, self.template.clone(), epoll_config);
+    let epoll = Epoll::from_fd(self.epfd, self.handler.clone(), epoll_config);
 
     debug!("created {} I/O epoll instances", self.io_threads);
     info!("starting I/O thread 0 event loop");
@@ -194,20 +227,4 @@ impl<H> Prop for Server<H>
 
     Ok(epoll)
   }
-}
-
-fn inet<A: ToSocketAddrs>(addr: A) -> Result<(SockAddr, AddressFamily)> {
-  let inet_addr_std = addr.to_socket_addrs()
-    .unwrap()
-    .next()
-    .ok_or("could not parse sockaddr")?;
-  let inet_addr = InetAddr::from_std(&inet_addr_std);
-  let sockaddr = SockAddr::Inet(inet_addr);
-
-  let family = match inet_addr_std {
-    net::SocketAddr::V4(_) => AddressFamily::Inet,
-    net::SocketAddr::V6(_) => AddressFamily::Inet6,
-  };
-
-  Ok((sockaddr, family))
 }
