@@ -1,10 +1,8 @@
-use error::Result;
-use handler::*;
 use daemon::{Daemon, DaemonCmd};
-
+use error::Result;
+use handler::Handler;
 use nix::sys::signal::{Signal, SigSet};
-
-use prop::Prop;
+use prop::{Prop, Reload};
 use prop::signals::DefaultSigHandler;
 
 pub struct DaemonBuilder<S, P> {
@@ -16,7 +14,7 @@ pub struct DaemonBuilder<S, P> {
 
 impl<S, P> DaemonBuilder<S, P>
   where S: Handler<Signal, DaemonCmd> + 'static,
-        P: Prop + Send + 'static,
+        P: Prop + Reload + Send + 'static,
 {
   pub fn with_sig_handler(self, handler: S) -> DaemonBuilder<S, P> {
     DaemonBuilder { sig_h: handler, ..self }
@@ -31,8 +29,9 @@ impl<S, P> DaemonBuilder<S, P>
   }
 }
 
-impl <P> Daemon<DefaultSigHandler, P> 
-  where P: Prop {
+impl<P> Daemon<DefaultSigHandler, P>
+  where P: Prop,
+{
   pub fn build(prop: P) -> DaemonBuilder<DefaultSigHandler, P> {
     let mut mask = SigSet::empty();
     mask.add(Signal::SIGTERM);

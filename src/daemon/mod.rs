@@ -1,12 +1,10 @@
 use epoll::*;
 use error::Result;
 use handler::*;
-
 pub use nix::sys::signal::{Signal, SigSet};
-
 use nix::sys::signalfd::{SignalFd, SFD_NONBLOCK};
 use nix::unistd;
-use prop::Prop;
+use prop::*;
 use std::os::unix::io::AsRawFd;
 
 mod builder;
@@ -14,7 +12,7 @@ mod builder;
 /// WIP: New-style daemon
 /// http://man7.org/linux/man-pages/man7/daemon.7.html
 ///
-/// Missing: 
+/// Missing:
 /// - Force exposing daemon interface via D-Bus along with a D-Bus service activation
 ///   configuration file
 /// - Force Prop to optionally be socket activatable
@@ -27,8 +25,7 @@ pub struct Daemon<S, P> {
 
 impl<S, P> Daemon<S, P>
   where S: Handler<Signal, DaemonCmd> + 'static,
-        P: Prop + Send + 'static
-        
+        P: Prop + Reload + Send + 'static,
 {
   pub fn run(mut prop: P, sig_h: S, sig_mask: SigSet) -> Result<()> {
 
@@ -51,7 +48,7 @@ impl<S, P> Daemon<S, P>
       Daemon {
         sigfd: sigfd,
         sig_h: sig_h,
-        prop: prop
+        prop: prop,
       }
     }));
 
@@ -80,12 +77,12 @@ impl<S, P> Drop for Daemon<S, P> {
 
 pub enum DaemonCmd {
   Shutdown,
-  Reload
+  Reload,
 }
 
 impl<S, P> Handler<EpollEvent, EpollCmd> for Daemon<S, P>
   where S: Handler<Signal, DaemonCmd>,
-        P: Prop
+        P: Prop + Reload,
 {
   fn on_next(&mut self, ev: EpollEvent) -> EpollCmd {
     if ev.data == self.sigfd.as_raw_fd() as u64 {

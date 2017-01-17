@@ -1,10 +1,11 @@
 use ::RawFd;
 use epoll::*;
 use error::*;
+use prop::Reload;
+use prop::signals::*;
 use handler::Handler;
 use mux::*;
 use nix::sched;
-use nix::sys::signalfd::SigSet;
 use nix::sys::socket::*;
 use prop::Prop;
 use std::net;
@@ -37,7 +38,6 @@ pub struct ServerConfig {
 // http://man7.org/linux/man-pages/man3/sd_listen_fds.3.html
 // http://man7.org/linux/man-pages/man5/systemd.socket.5.html
 impl ServerConfig {
-
   pub fn tcp<A: ToSocketAddrs>(addr: A) -> Result<ServerConfig> {
     let (sockaddr, family) = Self::inet(addr)?;
     ServerConfig::new(sockaddr, SockType::Stream, family, SOCK_NONBLOCK, 6)
@@ -144,21 +144,22 @@ impl<'m, H, F, R> Server<SyncMux<'m, H, F, R>>
   pub fn new(config: ServerConfig, factory: F) -> Result<Server<SyncMux<'m, H, F, R>>> {
 
     let max_conn = config.max_conn;
-    let server = Server::new_with(config, |epfd| {
-      SyncMux::new(max_conn, epfd, factory)
-    })?;
+    let server = Server::new_with(config, |epfd| SyncMux::new(max_conn, epfd, factory))?;
 
     Ok(server)
   }
+}
+
+impl<H> Reload for Server<H> {
+  // TODO reload configuration
+  // should assert that is not multithreaded + reload needed
+  fn reload(&mut self) {}
 }
 
 impl<H> Prop for Server<H>
   where H: Handler<EpollEvent, EpollCmd> + EpollHandler + Send + Clone + 'static,
 {
   type EpollHandler = H;
-
-  // TODO reload configuration
-  fn reload(&mut self) {}
 
   fn setup(&mut self, mask: SigSet) -> Result<Epoll<Self::EpollHandler>> {
 

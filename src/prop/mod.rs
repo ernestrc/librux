@@ -11,6 +11,8 @@ pub trait Prop {
   type EpollHandler: Handler<EpollEvent, EpollCmd>;
 
   fn setup(&mut self, mask: SigSet) -> Result<Epoll<Self::EpollHandler>>;
+}
 
+pub trait Reload {
   fn reload(&mut self);
 }

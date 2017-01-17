@@ -26,4 +26,3 @@ pub use std::os::unix::io::RawFd;
 pub trait Reset {
   fn reset(&mut self);
 }
-
