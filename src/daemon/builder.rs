@@ -1,15 +1,20 @@
 use daemon::{Daemon, DaemonCmd};
 use error::Result;
 use handler::Handler;
+use libc_sys::{c_int, sched_param, sched_get_priority_max};
 use nix::sys::signal::{Signal, SigSet};
+use nix::Errno;
 use prop::{Prop, Reload};
 use prop::signals::DefaultSigHandler;
+
+#[allow(non_camel_case_types)]
+pub type sched_policy = c_int;
 
 pub struct DaemonBuilder<S, P> {
   prop: P,
   sig_h: S,
-  // TODO sched_policy: c_int,
   sig_mask: SigSet,
+  sched_opt: Option<(sched_policy, sched_param)>,
 }
 
 impl<S, P> DaemonBuilder<S, P>
@@ -24,8 +29,18 @@ impl<S, P> DaemonBuilder<S, P>
     DaemonBuilder { sig_mask: mask, ..self }
   }
 
+  pub fn with_rt_sched(self, policy: sched_policy) -> DaemonBuilder<S, P> {
+    let sched_param_i;
+
+    unsafe {
+      sched_param_i =
+        sched_param { sched_priority: Errno::result(sched_get_priority_max(policy)).unwrap() };
+    }
+    DaemonBuilder { sched_opt: Some((policy, sched_param_i)), ..self }
+  }
+
   pub fn run(self) -> Result<()> {
-    Daemon::run(self.prop, self.sig_h, self.sig_mask)
+    Daemon::run(self.prop, self.sig_h, self.sig_mask, self.sched_opt)
   }
 }
 
@@ -41,6 +56,7 @@ impl<P> Daemon<DefaultSigHandler, P>
       sig_mask: mask,
       sig_h: DefaultSigHandler,
       prop: prop,
+      sched_opt: None
     }
   }
 }

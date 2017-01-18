@@ -13,7 +13,7 @@ use rux::mux::*;
 use rux::epoll::*;
 use rux::sys::socket::*;
 use rux::prop::server::*;
-use rux::daemon::Daemon;
+use rux::daemon::*;
 
 const BUF_SIZE: usize = 2048;
 const EPOLL_BUF_CAP: usize = 2048;
@@ -110,5 +110,7 @@ fn main() {
 
   let server = Server::new(config, EchoFactory).unwrap();
 
-  Daemon::build(server).run().unwrap();
+  Daemon::build(server)
+    .with_rt_sched(SCHED_FIFO)
+    .run().unwrap();
 }

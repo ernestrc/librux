@@ -3,6 +3,7 @@ extern crate slab;
 extern crate num_cpus;
 extern crate pad;
 extern crate time;
+extern crate libc as libc_sys;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]

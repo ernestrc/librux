@@ -17,6 +17,7 @@ name = "buf"
 path = "benches/buf.rs"
 
 [dependencies]
+libc = "*"
 nix = { version = "0.7.0", features = ["signalfd"] }
 num_cpus = "1.1.0"
 lazy_static = "0.2.1"
@@ -28,7 +29,7 @@ env_logger = "*"
 log = "0.3.6"
 slab = "0.3.0"
 
-[profile.release]
-debug = true
-#opt-level = 3
-#lto = false
+# [profile.release]
+# debug = true
+# opt-level = 3
+# lto = false

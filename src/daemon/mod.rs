@@ -1,13 +1,17 @@
 use epoll::*;
 use error::Result;
 use handler::*;
+use libc_sys::{sched_param, sched_setscheduler, rlimit, prlimit, RLIMIT_RTPRIO};
 pub use nix::sys::signal::{Signal, SigSet};
 use nix::sys::signalfd::{SignalFd, SFD_NONBLOCK};
-use nix::unistd;
+use nix::{unistd, Errno};
 use prop::*;
 use std::os::unix::io::AsRawFd;
 
 mod builder;
+
+pub use self::builder::sched_policy;
+pub use libc_sys::{SCHED_FIFO, SCHED_RR, SCHED_OTHER};
 
 /// WIP: New-style daemon
 /// http://man7.org/linux/man-pages/man7/daemon.7.html
@@ -27,7 +31,20 @@ impl<S, P> Daemon<S, P>
   where S: Handler<Signal, DaemonCmd> + 'static,
         P: Prop + Reload + Send + 'static,
 {
-  pub fn run(mut prop: P, sig_h: S, sig_mask: SigSet) -> Result<()> {
+  pub fn run(mut prop: P, sig_h: S, sig_mask: SigSet, sched_opt: Option<(sched_policy, sched_param)>) -> Result<()> {
+
+    sched_opt.map(|(sched_policy, sched_param_i)| {
+      // set sched policy
+      unsafe {
+        let mut rlim = rlimit {
+          rlim_cur: sched_param_i.sched_priority as u64,
+          rlim_max: sched_param_i.sched_priority as u64,
+        };
+        Errno::result(prlimit(0, RLIMIT_RTPRIO, &rlim, &mut rlim)).unwrap();
+        Errno::result(sched_setscheduler(0, sched_policy, &sched_param_i as *const sched_param))
+          .unwrap();
+      };
+    });
 
     // add the set of signals to the signal mask
     try!(sig_mask.thread_block());
