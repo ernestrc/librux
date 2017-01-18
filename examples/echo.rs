@@ -111,6 +111,6 @@ fn main() {
   let server = Server::new(config, EchoFactory).unwrap();
 
   Daemon::build(server)
-    .with_rt_sched(SCHED_FIFO)
+    .with_sched(SCHED_FIFO, None)
     .run().unwrap();
 }

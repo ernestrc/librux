@@ -2,8 +2,8 @@ use daemon::{Daemon, DaemonCmd};
 use error::Result;
 use handler::Handler;
 use libc_sys::{c_int, sched_param, sched_get_priority_max};
-use nix::sys::signal::{Signal, SigSet};
 use nix::Errno;
+use nix::sys::signal::{Signal, SigSet};
 use prop::{Prop, Reload};
 use prop::signals::DefaultSigHandler;
 
@@ -29,13 +29,11 @@ impl<S, P> DaemonBuilder<S, P>
     DaemonBuilder { sig_mask: mask, ..self }
   }
 
-  pub fn with_rt_sched(self, policy: sched_policy) -> DaemonBuilder<S, P> {
-    let sched_param_i;
+  pub fn with_sched(self, policy: sched_policy, priority: Option<c_int>) -> DaemonBuilder<S, P> {
+    let sched_param_i = sched_param { sched_priority: priority.unwrap_or_else(|| unsafe {
+        Errno::result(sched_get_priority_max(policy)).unwrap() })
+    };
 
-    unsafe {
-      sched_param_i =
-        sched_param { sched_priority: Errno::result(sched_get_priority_max(policy)).unwrap() };
-    }
     DaemonBuilder { sched_opt: Some((policy, sched_param_i)), ..self }
   }
 
@@ -56,7 +54,7 @@ impl<P> Daemon<DefaultSigHandler, P>
       sig_mask: mask,
       sig_h: DefaultSigHandler,
       prop: prop,
-      sched_opt: None
+      sched_opt: None,
     }
   }
 }
