@@ -10,6 +10,7 @@ static DEFAULT_BUF_SIZE: &'static usize = &(1024 * 16);
 // TODO specialized `copy_from`
 #[derive(Debug, Clone)]
 pub struct ByteBuffer {
+  init_capacity: usize,
   next_write: usize,
   next_read: usize,
   capacity: usize,
@@ -24,6 +25,7 @@ pub struct Mark {
 impl ByteBuffer {
   pub fn with_capacity(capacity: usize) -> ByteBuffer {
     ByteBuffer {
+      init_capacity: capacity,
       next_read: 0,
       next_write: 0,
       capacity: capacity,
@@ -173,6 +175,8 @@ impl Default for ByteBuffer {
 impl Reset for ByteBuffer {
   #[inline]
   fn reset(&mut self) {
+    self.buf.truncate(self.init_capacity);
+    self.capacity = self.init_capacity;
     self.next_read = 0;
     self.next_write = 0;
   }

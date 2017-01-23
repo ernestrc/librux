@@ -335,5 +335,17 @@ fn buffer_method_extends_capacity() {
       assert!(res.is_err());
       assert!(format!("{}", res.unwrap_err()).contains("30"));
     }
+
+    // resets capacity to initial capacity
+    buf.reset();
+
+    let a = [1; 21];
+    let res = buf.write(&a);
+
+    assert!(res.is_err());
+    match res.err().unwrap().kind() {
+      &ErrorKind::OutOfCapacity(max) => assert_eq!(max, 10),
+      e => panic!("different error: {:?}", e),
+    }
   }
 }
