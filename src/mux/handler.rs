@@ -34,17 +34,8 @@ impl<'m, H, P, R> SyncMux<'m, H, P, R>
   }
 }
 
-macro_rules! close {
-  ($clifd: expr) => {{
-    if let Err(e) = syscall!(::unistd::close($clifd)) {
-      report_err!(e.into());
-    }
-    return EpollCmd::Poll;
-  }}
-}
-
 macro_rules! some {
-  ($cmd:expr, $clifd: expr) => {{
+  ($cmd:expr) => {{
     match $cmd {
       None => {
         return EpollCmd::Poll;
@@ -64,7 +55,9 @@ impl<'m, H, P, R> Handler<EpollEvent, EpollCmd> for SyncMux<'m, H, P, R>
     match Action::decode(event.data) {
 
       Action::Notify(i, clifd) => {
-        let mut entry = some!(self.handlers.entry(i), clifd);
+        // ignore outstanding event from removed handler
+        let mut entry = some!(self.handlers.entry(i));
+
         let resource = unsafe { &mut *(&mut self.resources[i] as *mut R) };
 
         let mux_event = MuxEvent {
@@ -75,18 +68,28 @@ impl<'m, H, P, R> Handler<EpollEvent, EpollCmd> for SyncMux<'m, H, P, R>
 
         keep_or!(entry.get_mut().on_next(mux_event), {
           self.resources[i].reset();
-          close!(clifd);
+          entry.remove();
+          if let Err(e) = self.epfd.unregister(clifd) {
+            report_err!(e.into());
+          }
+          if let Err(e) = syscall!(::unistd::close(clifd)) {
+            report_err!(e.into());
+          }
+          return EpollCmd::Poll;
         });
       }
 
       Action::New(data) => {
         let srvfd = data as i32;
+
+        // do not accept unless we have a vacant entry
+        // TODO grow slab, deprecate max_conn in favour of reserve slots
+        // or Mux::reserve to pre-allocate and then grow as it needs more
+        let entry = some!(self.handlers.vacant_entry());
+
         match syscall!(accept(srvfd)) {
           Ok(Some(clifd)) => {
             debug!("accept: accepted new tcp client {}", &clifd);
-            // TODO grow slab, deprecate max_conn in favour of reserve slots
-            // or Mux::reserve to pre-allocate and then grow as it needs more
-            let entry = some!(self.handlers.vacant_entry(), clifd);
             let i = entry.index();
 
             let h = self.factory.new_handler(self.epfd, clifd);
@@ -132,7 +135,7 @@ impl<'m, H, P, R> Clone for SyncMux<'m, H, P, R>
       handlers: Slab::with_capacity(self.handlers.capacity()),
       resources: vec!(self.factory.new_resource(); self.handlers.capacity()),
       factory: self.factory.clone(),
-      interests: self.interests.clone(),
+      interests: self.interests,
       _marker: ::std::marker::PhantomData {},
     }
   }
