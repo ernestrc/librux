@@ -1,9 +1,8 @@
 #[macro_export]
 macro_rules! keep_or {
   ($cmd:expr, $b: block) => {{
-    match $cmd {
-      MuxCmd::Close => $b,
-      _ => (),
+    if let MuxCmd::Close = $cmd {
+      $b
     }
   }}
 }

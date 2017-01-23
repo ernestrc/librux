@@ -101,8 +101,7 @@ fn main() {
   let config = ServerConfig::tcp(("127.0.0.1", 9999))
     .unwrap()
     .max_conn(MAX_CONN)
-    //.io_threads(::std::cmp::max(1, ::num_cpus::get() / 2))
-    .io_threads(1)
+    .io_threads(::std::cmp::max(1, ::num_cpus::get() / 2))
     .epoll_config(EpollConfig {
       loop_ms: EPOLL_LOOP_MS,
       buffer_capacity: EPOLL_BUF_CAP,

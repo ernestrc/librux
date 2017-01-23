@@ -47,9 +47,9 @@ impl<S, P> Daemon<S, P>
     });
 
     // add the set of signals to the signal mask
-    try!(sig_mask.thread_block());
+    sig_mask.thread_block()?;
 
-    let sigfd = try!(SignalFd::with_flags(&sig_mask, SFD_NONBLOCK));
+    let sigfd = SignalFd::with_flags(&sig_mask, SFD_NONBLOCK)?;
     let fd = sigfd.as_raw_fd();
 
     let mut main = prop.setup(sig_mask).unwrap();
@@ -61,13 +61,13 @@ impl<S, P> Daemon<S, P>
       main.run();
     });
 
-    let mut aux = try!(Epoll::new_with(Default::default(), |_| {
+    let mut aux = Epoll::new_with(Default::default(), |_| {
       Daemon {
         sigfd: sigfd,
         sig_h: sig_h,
         prop: prop,
       }
-    }));
+    })?;
 
     let siginfo = EpollEvent {
       events: EPOLLIN | EPOLLET,
@@ -75,7 +75,7 @@ impl<S, P> Daemon<S, P>
     };
 
     // register signalfd with epfd
-    try!(aux.epfd.register(fd, &siginfo));
+    aux.epfd.register(fd, &siginfo)?;
 
     // run aux event loop
     info!("{:?} starting aux event loop", unistd::getpid());

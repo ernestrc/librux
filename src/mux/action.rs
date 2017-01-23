@@ -6,15 +6,15 @@ pub enum Action {
 }
 
 impl Action {
-  #[inline(always)]
+  #[inline]
   pub fn encode(action: Action) -> u64 {
     match action {
-      Action::Notify(data, fd) => ((fd as u64) << 31) | ((data as u64) << 15) | 0,
+      Action::Notify(data, fd) => ((fd as u64) << 31) | ((data as u64) << 15),
       Action::New(data) => data,
     }
   }
 
-  #[inline(always)]
+  #[inline]
   pub fn decode(data: u64) -> Action {
     let arg1 = ((data >> 15) & 0xffff) as usize;
     let fd = (data >> 31) as i32;

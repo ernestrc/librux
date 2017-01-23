@@ -42,7 +42,7 @@ pub enum EpollCmd {
 }
 
 pub trait EpollHandler {
-  #[inline(always)]
+  #[inline]
   fn interests() -> EpollEventKind;
 
   fn with_epfd(&mut self, epfd: EpollFd);
@@ -64,7 +64,7 @@ impl<'h, H: Handler<EpollEvent, EpollCmd> + 'h> Epoll<H> {
     where F: FnOnce(EpollFd) -> H,
   {
 
-    let fd = try!(epoll_create());
+    let fd = epoll_create()?;
 
     let epfd = EpollFd { fd: fd };
 
@@ -73,7 +73,7 @@ impl<'h, H: Handler<EpollEvent, EpollCmd> + 'h> Epoll<H> {
     Ok(Self::from_fd(epfd, handler, config))
   }
 
-  #[inline(always)]
+  #[inline]
   pub fn run_once(&mut self) -> EpollCmd {
     unsafe {
       let dst = ::std::slice::from_raw_parts_mut(self.buf.as_mut_ptr(), self.buf.capacity());
@@ -112,27 +112,27 @@ impl EpollFd {
     EpollFd { fd: fd }
   }
 
-  #[inline(always)]
+  #[inline]
   fn ctl(&self, op: EpollOp, interest: &EpollEvent, fd: RawFd) -> Result<()> {
-    try!(epoll_ctl(self.fd, op, fd, interest));
+    epoll_ctl(self.fd, op, fd, interest)?;
     Ok(())
   }
 
-  #[inline(always)]
+  #[inline]
   pub fn reregister(&self, fd: RawFd, interest: &EpollEvent) -> Result<()> {
-    try!(self.ctl(EpollOp::EpollCtlMod, interest, fd));
+    self.ctl(EpollOp::EpollCtlMod, interest, fd)?;
     Ok(())
   }
 
-  #[inline(always)]
+  #[inline]
   pub fn register(&self, fd: RawFd, interest: &EpollEvent) -> Result<()> {
-    try!(self.ctl(EpollOp::EpollCtlAdd, interest, fd));
+    self.ctl(EpollOp::EpollCtlAdd, interest, fd)?;
     Ok(())
   }
 
-  #[inline(always)]
+  #[inline]
   pub fn unregister(&self, fd: RawFd) -> Result<()> {
-    try!(self.ctl(EpollOp::EpollCtlDel, &NO_INTEREST, fd));
+    self.ctl(EpollOp::EpollCtlDel, &NO_INTEREST, fd)?;
     Ok(())
   }
 }
