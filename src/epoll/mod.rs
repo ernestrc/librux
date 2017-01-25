@@ -36,6 +36,7 @@ pub struct EpollFd {
   pub fd: RawFd,
 }
 
+#[derive(Debug, Copy, Clone)]
 pub enum EpollCmd {
   Shutdown,
   Poll,
@@ -172,7 +173,7 @@ mod tests {
 
   impl Handler<EpollEvent, EpollCmd> for ChannelHandler {
     fn next(&mut self) -> EpollCmd {
-      self.state.clone()
+      self.state
     }
     
     fn on_next(&mut self, events: EpollEvent) {
@@ -194,7 +195,7 @@ mod tests {
       buffer_capacity: 100,
     };
 
-    let mut poll = Epoll::new_with(config, |_| ChannelHandler { tx: tx }).unwrap();
+    let mut poll = Epoll::new_with(config, |_| ChannelHandler { tx: tx, state: EpollCmd::Poll }).unwrap();
 
     let (rfd, wfd) = unistd::pipe2(O_NONBLOCK).unwrap();
 
