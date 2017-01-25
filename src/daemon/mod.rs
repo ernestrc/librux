@@ -25,6 +25,7 @@ pub struct Daemon<S, P> {
   sigfd: SignalFd,
   sig_h: S,
   prop: P,
+  terminating: bool
 }
 
 impl<S, P> Daemon<S, P>
@@ -66,6 +67,7 @@ impl<S, P> Daemon<S, P>
         sigfd: sigfd,
         sig_h: sig_h,
         prop: prop,
+        terminating: false,
       }
     })?;
 
@@ -95,29 +97,39 @@ impl<S, P> Drop for Daemon<S, P> {
 pub enum DaemonCmd {
   Shutdown,
   Reload,
+  Continue,
 }
 
 impl<S, P> Handler<EpollEvent, EpollCmd> for Daemon<S, P>
   where S: Handler<Signal, DaemonCmd>,
         P: Prop + Reload,
 {
-  fn on_next(&mut self, ev: EpollEvent) -> EpollCmd {
+
+  fn next(&mut self) -> EpollCmd {
+    if self.terminating {
+      return EpollCmd::Shutdown;
+    }
+
+    EpollCmd::Poll
+  }
+
+  fn on_next(&mut self, ev: EpollEvent) {
     if ev.data == self.sigfd.as_raw_fd() as u64 {
       match self.sigfd.read_signal() {
         Ok(Some(sig)) => {
-          match self.sig_h.on_next(Signal::from_c_int(sig.ssi_signo as i32).unwrap()) {
+          self.sig_h.on_next(Signal::from_c_int(sig.ssi_signo as i32).unwrap());
+          match self.sig_h.next() {
             DaemonCmd::Reload => self.prop.reload(),
             DaemonCmd::Shutdown => {
               warn!("received signal {:?}. Shutting down ..", sig.ssi_signo);
-              return EpollCmd::Shutdown;
-            }
+              self.terminating = true;
+            },
+            DaemonCmd::Continue => {}
           }
         }
         Ok(None) => debug!("read_signal(): not ready"),
         Err(err) => error!("read_signal(): {}", err),
-      }
+      };
     }
-
-    EpollCmd::Poll
   }
 }

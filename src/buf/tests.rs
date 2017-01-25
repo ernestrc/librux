@@ -251,6 +251,7 @@ struct MyType {
 }
 
 impl Buffered for MyType {
+  type Error = Error;
   fn max_size() -> usize {
     30
   }

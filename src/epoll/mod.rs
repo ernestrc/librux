@@ -81,12 +81,10 @@ impl<'h, H: Handler<EpollEvent, EpollCmd> + 'h> Epoll<H> {
       self.buf.set_len(cnt);
 
       for ev in self.buf.drain(..) {
-        if let EpollCmd::Shutdown = self.handler.on_next(ev) {
-          return EpollCmd::Shutdown;
-        }
+        self.handler.on_next(ev);
       }
 
-      EpollCmd::Poll
+      self.handler.next()
     }
   }
 
@@ -169,15 +167,20 @@ mod tests {
 
   struct ChannelHandler {
     tx: Sender<EpollEvent>,
+    state: EpollCmd
   }
 
   impl Handler<EpollEvent, EpollCmd> for ChannelHandler {
-    fn on_next(&mut self, events: EpollEvent) -> EpollCmd {
+    fn next(&mut self) -> EpollCmd {
+      self.state.clone()
+    }
+    
+    fn on_next(&mut self, events: EpollEvent) {
       if self.tx.send(events).is_ok() {
-        return EpollCmd::Shutdown;
+        self.state = EpollCmd::Shutdown
       }
 
-      EpollCmd::Poll
+      self.state = EpollCmd::Poll;
     }
   }
 

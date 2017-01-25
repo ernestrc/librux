@@ -1,4 +1,6 @@
 pub trait Handler<In, Out> {
-  #[inline]
-  fn on_next(&mut self, In) -> Out;
+
+  fn on_next(&mut self, In);
+
+  fn next(&mut self) -> Out;
 }

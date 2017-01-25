@@ -52,7 +52,7 @@ impl<P> Daemon<DefaultSigHandler, P>
 
     DaemonBuilder {
       sig_mask: mask,
-      sig_h: DefaultSigHandler,
+      sig_h: DefaultSigHandler::new(),
       prop: prop,
       sched_opt: None,
     }

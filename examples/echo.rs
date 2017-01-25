@@ -6,7 +6,6 @@ extern crate num_cpus;
 extern crate env_logger;
 
 use rux::{RawFd, Reset};
-use rux::error::*;
 use rux::buf::ByteBuffer;
 use rux::handler::*;
 use rux::mux::*;
@@ -23,10 +22,21 @@ const MAX_CONN: usize = 2048;
 /// Handler that echoes incoming bytes
 ///
 /// For benchmarking I/O throuput and latency
-pub struct EchoHandler;
+pub struct EchoHandler {
+  closed: bool
+}
 
 impl<'a> Handler<MuxEvent<'a, ByteBuffer>, MuxCmd> for EchoHandler {
-  fn on_next(&mut self, event: MuxEvent<'a, ByteBuffer>) -> MuxCmd {
+
+  fn next(&mut self) -> MuxCmd {
+    if self.closed {
+      return MuxCmd::Close;
+    }
+
+    MuxCmd::Keep
+  }
+
+  fn on_next(&mut self, event: MuxEvent<'a, ByteBuffer>) {
 
     let fd = event.fd;
     let events = event.events;
@@ -34,12 +44,14 @@ impl<'a> Handler<MuxEvent<'a, ByteBuffer>, MuxCmd> for EchoHandler {
 
     if events.contains(EPOLLHUP) {
       trace!("socket's fd {}: EPOLLHUP", fd);
-      return MuxCmd::Close;
+      self.closed = true;
+      return;
     }
 
     if events.contains(EPOLLERR) {
       error!("socket's fd {}: EPOLERR", fd);
-      return MuxCmd::Close;
+      self.closed = true;
+      return;
     }
 
     if events.contains(EPOLLIN) {
@@ -55,8 +67,6 @@ impl<'a> Handler<MuxEvent<'a, ByteBuffer>, MuxCmd> for EchoHandler {
         }
       }
     }
-
-    MuxCmd::Keep
   }
 }
 
@@ -84,7 +94,9 @@ impl<'a> HandlerFactory<'a, EchoHandler, ByteBuffer> for EchoFactory {
   }
 
   fn new_handler(&mut self, _: EpollFd, _: RawFd) -> EchoHandler {
-    EchoHandler
+    EchoHandler { 
+      closed: false
+    }
   }
 }
 
@@ -101,7 +113,8 @@ fn main() {
   let config = ServerConfig::tcp(("127.0.0.1", 9999))
     .unwrap()
     .max_conn(MAX_CONN)
-    .io_threads(::std::cmp::max(1, ::num_cpus::get() / 2))
+    .io_threads(1)
+    // .io_threads(::std::cmp::max(1, ::num_cpus::get() / 2))
     .epoll_config(EpollConfig {
       loop_ms: EPOLL_LOOP_MS,
       buffer_capacity: EPOLL_BUF_CAP,

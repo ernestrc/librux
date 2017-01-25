@@ -38,7 +38,7 @@ macro_rules! some {
   ($cmd:expr) => {{
     match $cmd {
       None => {
-        return EpollCmd::Poll;
+        return;
       },
       Some(res) => res,
     }
@@ -50,7 +50,12 @@ impl<'m, H, P, R> Handler<EpollEvent, EpollCmd> for SyncMux<'m, H, P, R>
         P: HandlerFactory<'m, H, R> + 'm,
         R: Reset + Clone + 'm,
 {
-  fn on_next(&mut self, event: EpollEvent) -> EpollCmd {
+  #[inline(always)]
+  fn next(&mut self) -> EpollCmd {
+    EpollCmd::Poll
+  }
+
+  fn on_next(&mut self, event: EpollEvent) {
 
     match Action::decode(event.data) {
 
@@ -60,13 +65,13 @@ impl<'m, H, P, R> Handler<EpollEvent, EpollCmd> for SyncMux<'m, H, P, R>
 
         let resource = unsafe { &mut *(&mut self.resources[i] as *mut R) };
 
-        let mux_event = MuxEvent {
+        entry.get_mut().on_next(MuxEvent {
           resource: resource,
           events: event.events,
           fd: clifd,
-        };
+        });
 
-        keep_or!(entry.get_mut().on_next(mux_event), {
+        keep_or!(entry.get_mut().next(), {
           self.resources[i].reset();
           entry.remove();
           if let Err(e) = self.epfd.unregister(clifd) {
@@ -75,7 +80,7 @@ impl<'m, H, P, R> Handler<EpollEvent, EpollCmd> for SyncMux<'m, H, P, R>
           if let Err(e) = syscall!(::unistd::close(clifd)) {
             report_err!(e.into());
           }
-          return EpollCmd::Poll;
+          return;
         });
       }
 
@@ -108,8 +113,6 @@ impl<'m, H, P, R> Handler<EpollEvent, EpollCmd> for SyncMux<'m, H, P, R>
         }
       }
     };
-
-    EpollCmd::Poll
   }
 }
 

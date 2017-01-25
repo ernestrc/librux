@@ -13,6 +13,8 @@ macro_rules! report_err {
 #[macro_export]
 macro_rules! syscall {
   ($syscall:expr) => {{
+    use $crate::error::*;
+
     let res: Result<_>;
     loop {
       match $syscall {
